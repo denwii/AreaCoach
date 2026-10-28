@@ -6,7 +6,7 @@ sets a better area in OpenTabletDriver for the next map. Map after map the chang
 smaller until the area settles on the one you are most precise and steady with.
 
 It can also guide you to the right settings for AbstractQbit's **Radial Follow**
-smoothing filter (a light "aim assist" that keeps the cursor still on the circle).
+smoothing filter.
 
 ![The diagnosis while it runs](docs/screenshots/diagnosis.png)
 
