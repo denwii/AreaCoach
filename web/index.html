@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Area Coach</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" aria-label="Sections">
+    <div class="brand" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="30" height="30"><path d="M5 11V5h6M21 5h6v6M27 21v6h-6M11 27H5v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="16" r="4.2" fill="var(--next)"/></svg>
+    </div>
+    <a href="#/diagnosis" data-route="diagnosis"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><rect x="7" y="9" width="10" height="6" rx="1" stroke-dasharray="2 2"/><path d="M12 3v3M12 18v3"/></svg><span>Diagnosis</span></a>
+    <a href="#/area" data-route="area"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 9h-1.5v1.5M16 9h1.5v1.5M8 15h-1.5v-1.5M16 15h1.5v-1.5"/></svg><span>Area</span></a>
+    <a href="#/progress" data-route="progress"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/></svg><span>Progress</span></a>
+    <a href="#/plays" data-route="plays"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1" class="fill"/><circle cx="4" cy="12" r="1" class="fill"/><circle cx="4" cy="18" r="1" class="fill"/></svg><span>Plays</span></a>
+    <a href="#/filter" data-route="filter"><svg viewBox="0 0 24 24"><path d="M3 12c2-5 4-5 6 0s4 5 6 0 4-5 6 0"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/></svg><span>Filter</span></a>
+    <span class="rail-gap"></span>
+    <a href="#/settings" data-route="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Settings</span></a>
+  </nav>
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title" id="pageTitle"></div>
+      <div class="row" style="gap:10px"><div class="profile-sel" id="profileSel"></div><div class="status" id="status" aria-live="polite"></div></div>
+    </header>
+    <main id="view" class="view" tabindex="-1"></main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="tip" id="tip" role="tooltip"></div>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
