@@ -179,8 +179,12 @@ func runLoop(t *testing.T, c loopCase) loopResult {
 			pl.APar, pl.APerp = c.handA, 0.8*c.handA
 		}
 		if c.kappa != 0 {
-			pl.Pivot = [2]float64{c.nat.X + c.pivot[0], c.nat.Y + c.pivot[1]}
-			pl.Kappa, pl.Phi0 = c.kappa, PivotAngle(pl.Pivot, c.nat.X+c.straightAt, c.nat.Y)
+			// the pivot and where the hand aims straight are given as seen
+			// on the screen: on the tablet they turn with the area
+			th := c.nat.Rot * math.Pi / 180
+			rc, rs := math.Cos(th), math.Sin(th)
+			pl.Pivot = [2]float64{c.nat.X + rc*c.pivot[0] - rs*c.pivot[1], c.nat.Y + rs*c.pivot[0] + rc*c.pivot[1]}
+			pl.Kappa, pl.Phi0 = c.kappa, PivotAngle(pl.Pivot, c.nat.X+c.straightAt*rc, c.nat.Y+c.straightAt*rs)
 		}
 		frames := pl.Play(bm, 0, setup)
 		objs, d := bm.Objects(0)
@@ -654,5 +658,89 @@ func TestAdaptSteadyPlace(t *testing.T) {
 	}
 	if xs[1] < 72-2.5 {
 		t.Errorf("went past where the hand is steadiest: X %.1f", xs[1])
+	}
+}
+
+// The area may be rotated in OpenTabletDriver by any angle (a tablet held
+// sideways, upside down, a little turned): the diagnosis finds the same
+// width and place, keeps the rotation, and never goes past the tablet. The
+// first map uses the largest area that fits the tablet turned that way.
+func TestAdaptRotated(t *testing.T) {
+	ratio := 1080.0 / 1920
+	for _, tc := range []struct {
+		rot    float64
+		locked bool
+	}{{90, true}, {180, true}, {270, true}, {-30, true}, {12, true}, {270, false}, {45, false}} {
+		t.Run(fmt.Sprintf("rot%.0f-locked%v", tc.rot, tc.locked), func(t *testing.T) {
+			nat := otd.Rect{W: 62, H: 62 * ratio, X: 74, Y: 48, Rot: tc.rot}
+			if !tc.locked {
+				nat.W, nat.H = 72, 46
+			}
+			anchor := otd.Rect{W: 70, H: 70 * ratio, X: 76, Y: 47.5, Rot: tc.rot}
+			r := runLoop(t, loopCase{name: "rotated", locked: tc.locked, nat: nat, anchor: anchor, residual: 0.35, plays: 9})
+			f := r.fit
+			t.Logf("result %+v (natural %+v)", f.Target, nat)
+			if math.Abs(f.Target.W/nat.W-1) > 0.06 {
+				t.Errorf("width %.1f, the hand is used to %.1f", f.Target.W, nat.W)
+			}
+			if !tc.locked && math.Abs(f.Target.H/nat.H-1) > 0.08 {
+				t.Errorf("height %.1f, the hand is used to %.1f", f.Target.H, nat.H)
+			}
+			if d := math.Hypot(f.Target.X-nat.X, f.Target.Y-nat.Y); d > 2 {
+				t.Errorf("centre %.1f,%.1f, the hand plays at %.1f,%.1f", f.Target.X, f.Target.Y, nat.X, nat.Y)
+			}
+			hold := 0.0
+			if tc.locked {
+				hold = ratio
+			}
+			if want := analysis.MaxWidth(152, 95, hold, tc.rot); r.areas[0].W > want+0.01 || (tc.locked && r.areas[0].W < 0.98*want) {
+				t.Errorf("first map %.1f mm wide, the largest that fits turned by %.0f° is %.1f", r.areas[0].W, tc.rot, want)
+			}
+			for i, ar := range r.areas {
+				if ar.Rot != tc.rot {
+					t.Errorf("map %d: rotation changed to %.1f°", i+1, ar.Rot)
+				}
+				if !analysis.FitsTablet(ar, 152, 95) {
+					t.Errorf("map %d: the area %+v goes past the tablet", i+1, ar)
+				}
+			}
+		})
+	}
+}
+
+// Turned aim with a rotated area: the side where the aim comes out straight
+// is along the area's own width (the screen's left to right), and the area
+// slides that way.
+func TestAdaptArcRotated(t *testing.T) {
+	ratio := 1080.0 / 1920
+	for _, rot := range []float64{0, 270, 90, 180, 20} {
+		t.Run(fmt.Sprintf("rot%.0f", rot), func(t *testing.T) {
+			// small enough to slide 14 mm along its width on the tablet's
+			// short side too
+			nat := otd.Rect{W: 60, H: 60 * ratio, X: 76, Y: 47.5, Rot: rot}
+			c := loopCase{name: "arc-rotated", locked: true, nat: nat, anchor: nat, start: nat, residual: 0.35, plays: 12,
+				anyPlace: true, pivot: [2]float64{60, 110}, kappa: 0.5, straightAt: 14}
+			r := runLoop(t, c)
+			a := r.fit.Arc
+			t.Logf("arc %+v", a)
+			if !a.Strong {
+				t.Fatalf("the turning across the area was not seen: %+v", a)
+			}
+			if dir := math.Mod(a.Dir-rot+540, 360) - 180; dir > -5 {
+				t.Errorf("the wrist is to the right on the screen, yet the arc says %.1f° (%.1f° on the tablet)", dir, a.Dir)
+			}
+			last := r.areas[len(r.areas)-1]
+			th := rot * math.Pi / 180
+			along := (last.X-nat.X)*math.Cos(th) + (last.Y-nat.Y)*math.Sin(th)
+			// toward +14 mm, at most a step a map (the hand follows the area)
+			if along < 9 || along > 17 {
+				t.Errorf("the area slid %+.1f mm along its width, it should go toward +14 (to %.1f,%.1f)", along, last.X, last.Y)
+			}
+			for _, ar := range r.areas {
+				if ar.Rot != rot {
+					t.Errorf("the area was rotated: %+v", ar)
+				}
+			}
+		})
 	}
 }

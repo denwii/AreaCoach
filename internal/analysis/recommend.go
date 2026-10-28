@@ -96,7 +96,7 @@ func recommend(rep *Report, in Input, cur *EpochInfo, eds map[int]*epochData, ca
 
 	// the grid shown in the charts, and the range the advice may use
 	gLo := math.Max(lo*0.8, 20)
-	gHi := math.Min(hi*1.2, setup.TabletW)
+	gHi := math.Min(hi*1.2, MaxWidth(setup.TabletW, setup.TabletH, 0, setup.Area.Rot))
 	if gHi <= gLo+1 {
 		gHi = gLo + 1
 	}

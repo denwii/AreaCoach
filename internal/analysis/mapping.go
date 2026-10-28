@@ -114,6 +114,52 @@ func AreaCorners(r otd.Rect) [4][2]float64 {
 	return out
 }
 
+// ScreenVec is a movement on the tablet (mm, along the tablet's axes) as
+// seen on the screen, for an area rotated by rot degrees.
+func ScreenVec(dx, dy, rot float64) (float64, float64) {
+	t := rot * math.Pi / 180
+	c, s := math.Cos(t), math.Sin(t)
+	return c*dx + s*dy, -s*dx + c*dy
+}
+
+// tabletSpan is how much of the tablet an area w×h turned by rot degrees
+// takes, along the tablet's x and y.
+func tabletSpan(w, h, rot float64) (float64, float64) {
+	t := rot * math.Pi / 180
+	c, s := math.Abs(math.Cos(t)), math.Abs(math.Sin(t))
+	return w*c + h*s, w*s + h*c
+}
+
+// MaxWidth is the widest area turned by rot degrees, with height ratio ×
+// width, that fits a tablet tw × th (ratio 0: the height left aside).
+func MaxWidth(tw, th, ratio, rot float64) float64 {
+	t := rot * math.Pi / 180
+	c, s := math.Abs(math.Cos(t)), math.Abs(math.Sin(t))
+	w := math.Inf(1)
+	if d := c + ratio*s; d > 1e-9 {
+		w = math.Min(w, tw/d)
+	}
+	if d := s + ratio*c; d > 1e-9 {
+		w = math.Min(w, th/d)
+	}
+	return w
+}
+
+// maxHeight is the tallest area of width w turned by rot degrees that fits
+// a tablet tw × th.
+func maxHeight(tw, th, w, rot float64) float64 {
+	t := rot * math.Pi / 180
+	c, s := math.Abs(math.Cos(t)), math.Abs(math.Sin(t))
+	h := math.Inf(1)
+	if s > 1e-9 {
+		h = math.Min(h, (tw-w*c)/s)
+	}
+	if c > 1e-9 {
+		h = math.Min(h, (th-w*s)/c)
+	}
+	return h
+}
+
 // FitsTablet reports whether an area lies within the tablet bounds.
 func FitsTablet(r otd.Rect, tw, th float64) bool {
 	if tw <= 0 || th <= 0 {

@@ -32,17 +32,18 @@ OpenTabletDriver.
   expected aim misses and the place where your aim comes out straightest, and puts that
   area in OpenTabletDriver before you start the next map.
 - **Every map tries something slightly different.** The next map is played with the best
-  area found so far, a little bigger or smaller in turn; every two maps it is also moved
-  a little to one side. That is how it learns which width and which place you are
+  area found so far, a little bigger or smaller in turn and by varying amounts; every two
+  maps it is also moved a little to one side. That is how it learns which width and which place you are
   steadiest with. The tries get smaller as it gets surer.
 - **A "perfection" percentage** says how close the area found is to a perfect one: how
   sure the diagnosis is, times how clean your aim is with it.
 - **Guided filter.** For Radial Follow it tells you which values to set for the next map;
   you set them yourself, and after every replay it gives you new ones, until it finds the
   values that help you most.
-- **Replay analysis.** Even without the diagnosis, it reads all your local replays and
-  shows how you aim, which area your replays point to, your progress over time and every
-  play in detail.
+- **Replay analysis.** Every replay you save while using it is analysed: how you aim,
+  which area your replays point to, your progress over time and every play in detail.
+  Replays from before you first started Area Coach are ignored, so there's no long
+  import of your old replays.
 
 The interface is a local web page shown in its own window.
 
@@ -90,22 +91,20 @@ Your data (analysed replays, history, settings, log) is kept in
 
 ## First start
 
-On the first start Area Coach finds osu! and OpenTabletDriver by itself, reads your
-resolution and your current area, and imports your recent replays (a few seconds to a
-minute). Open **Settings** and check:
+On the first start Area Coach finds osu! and OpenTabletDriver by itself and reads your
+resolution and your current area. From then on, every replay you save is analysed;
+replays saved before the first start are not used. Open **Settings** and check:
 
 | Setting | What it is |
 | --- | --- |
 | **osu! folder** | Where osu! is installed. Empty = found automatically. Set it if you have more than one install. |
 | **Game resolution** | The resolution osu! runs at. Empty = read from the osu! config. |
-| **Player name to analyse** | Only replays under this name are used (empty = the name in osu!). Useful if you also watch other players' replays. |
 | **settings.json file** | The OpenTabletDriver settings file. Empty = found automatically. |
 | **Profile to use** | Shown when OpenTabletDriver has profiles for more than one tablet: pick the one you play with. |
 | **Tablet model** | Only if the tablet size shown is wrong. |
 | **Grip profiles** | Every replay belongs to a profile. When you change grip (for example from tripod to palm), create a new profile: the analysis starts from zero for it, and you can switch back any time. The menu at the top right switches profile too. |
-| **Area history** | Every area you have used, recorded automatically. If you used the current area before the date detected, move the date earlier so more plays count. |
-| **Most recent replays to analyse** | How many of your newest replays are imported (default 1500). |
-| **Open the folder / Re-import all replays** | Opens the data folder / analyses every replay again from scratch. |
+| **Area history** | Every area you have used, recorded automatically. If an area change was detected late, move the date earlier so more plays count. |
+| **Open the folder / Re-import all replays** | Opens the data folder / analyses again, from scratch, the replays saved since the first start. |
 | **Theme** | System, dark or light. |
 
 ## The diagnosis, step by step
@@ -114,12 +113,15 @@ minute). Open **Settings** and check:
 
 - OpenTabletDriver must be running. The Diagnosis page shows **"OpenTabletDriver
   answers"** when it can set the area, and the tablet it sees.
-- It's best to **close the OpenTabletDriver window** (the driver keeps running in the
-  tray). That window keeps showing the numbers it read when it was opened; if you press
-  Apply or Save there, it sends back an old area. Area Coach puts the right one back by
-  itself, but it's simpler not to have it open.
+- The **OpenTabletDriver window** can stay open (you need it for the guided filter). It
+  keeps showing the area numbers from when it was opened, so they look old: that's fine.
+  If you press Apply or Save there, Area Coach puts the right area back by itself.
 - Pick maps you know, with variety: jumps, streams, small and big circles, at your usual
   level or a bit harder.
+- Any **rotation** set in OpenTabletDriver works (a tablet held sideways, upside down or
+  a little turned): the rotation is never changed, the areas always fit the tablet as it
+  is turned, and directions on the page (left, right, up, down) are as seen on your
+  screen.
 
 ### 2. Start options
 
@@ -180,7 +182,7 @@ long/short, click offset, rotation, curved lines, perfection, how the area chang
 | --- | --- |
 | **Pause / Resume** | Pause leaves the area found in OpenTabletDriver and stops changing it. Resume carries on from where it was. |
 | **Back to the previous area** | Puts back the area you had before the diagnosis and pauses. What it learnt is kept. |
-| **Refresh it** | Shown when the OpenTabletDriver window is open: closes and reopens it so it shows the current area. |
+| **Show the current area in OpenTabletDriver** | Shown in a yellow box when the OpenTabletDriver window is open. That window keeps showing the area from when it was opened; you don't need to do anything about it (if you press Apply or Save there, the right area is put back by itself). The button reopens the window so it shows the current numbers. |
 | **Widths allowed** | Same as at the start. Changing it works the area out again and sets it straight away. |
 | **Position: Follows the hand** | Default. The area moves towards where you're steadiest and where your aim comes out straight, at most 1.5 mm per map. A constant offset of your clicks (a habit your wrist would just follow) is not chased. |
 | **Position: Hold here** | The position stays where it is now; only the size changes. Use it if the area is making you move your wrist rest. |
@@ -258,7 +260,7 @@ delay) and **Curves**.
   each period, warm-up and how you got used to the current area.
 - **Plays**: every analysed replay; click one to see where you clicked on every note. At
   the bottom, **Replays found but not used** lists the replays it skipped and why (mods
-  like Relax or Auto, another player's name, map missing from Songs, not osu!standard…),
+  like Relax or Auto, map missing from Songs, not osu!standard…),
   and **Where I look for them** shows the folders it watches and the time of the last
   replay in each.
 
@@ -271,7 +273,8 @@ delay) and **Curves**.
 ## Troubleshooting
 
 **A map I played doesn't show up.**
-Look at the bottom of the **Plays** page. If it isn't in *Replays found but not used*:
+Only replays saved after you first started Area Coach are used. Look at the bottom of
+the **Plays** page. If it isn't in *Replays found but not used*:
 osu! didn't save a replay. Remember: F2 after a fail or in multiplayer; Esc leaves no
 replay. If *Where I look for them* shows the wrong folder, set the osu! folder in
 Settings. If the time of the last replay in `Data\r` doesn't change after you pass a map
@@ -287,12 +290,13 @@ one is being changed: pick the right one in Settings → Profile to use, then **
 over**. Also check that no other driver (Wacom) is using the tablet.
 
 **The diagnosis paused saying another area arrived in OpenTabletDriver.**
-Apply or Save was pressed in the OpenTabletDriver window while it showed old numbers.
-Press **Resume**.
+An area it had never used was set in OpenTabletDriver (old areas sent back by its window
+are put right by themselves). Press **Resume**.
 
-**Two areas keep alternating.**
-That's normal when the best width sits at a limit you set in *Widths allowed*: one map is
-played at the limit, the next tries the other side. The page says so.
+**The area changes a little every map.**
+That's how it works: every map tries a width a little bigger or smaller than the best
+found (by varying amounts, so widths in between are played too), and every two maps a
+slightly different place. The tries shrink as the diagnosis gets surer.
 
 **The window doesn't open / opens in the browser.**
 Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).

@@ -299,10 +299,12 @@ func noteCells(ns []winNote) {
 // their own offset to count as a habit of that part.
 const cellRidge = 6.0
 
-// fitIn shrinks an area, keeping its shape, until it fits the tablet.
+// fitIn shrinks an area, keeping its shape, until it fits the tablet
+// (turned as it is).
 func fitIn(r otd.Rect, tabletW, tabletH float64) otd.Rect {
 	if tabletW > 0 && tabletH > 0 {
-		k := math.Min(1, math.Min(tabletW/r.W, tabletH/r.H))
+		sx, sy := tabletSpan(r.W, r.H, r.Rot)
+		k := math.Min(1, math.Min(tabletW/sx, tabletH/sy))
 		r.W, r.H = r.W*k, r.H*k
 		r = ClampToTablet(r, tabletW, tabletH)
 	}

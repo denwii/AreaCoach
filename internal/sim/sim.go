@@ -242,9 +242,17 @@ func (pl *Player) play(bm *osu.Beatmap, mods uint32, setup analysis.Setup, chang
 			}
 			gx, gy, ox, oy := pl.Hand.mismatch(st.area, prev, since)
 			ab := pl.Hand.Absolute
-			av = [2][2]float64{{(1 - ab) * gx, 0}, {0, (1 - ab) * gy}}
-			ap[0][0] += ab * gx
-			ap[1][1] += ab * gy
+			// gx, gy are along the area's own width and height: on the
+			// tablet they turn with the area
+			th := st.area.Rot * math.Pi / 180
+			c, sn := math.Cos(th), math.Sin(th)
+			g := [2][2]float64{{c*c*gx + sn*sn*gy, c * sn * (gx - gy)}, {c * sn * (gx - gy), sn*sn*gx + c*c*gy}}
+			av = [2][2]float64{{(1 - ab) * g[0][0], (1 - ab) * g[0][1]}, {(1 - ab) * g[1][0], (1 - ab) * g[1][1]}}
+			for i := 0; i < 2; i++ {
+				for j := 0; j < 2; j++ {
+					ap[i][j] += ab * g[i][j]
+				}
+			}
 			hox, hoy = ox, oy
 		} else if gainOf != nil {
 			since := math.Inf(1)

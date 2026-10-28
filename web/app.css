@@ -463,3 +463,9 @@ table.data tbody tr.click:hover td { background: var(--raised); }
   .otd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .otd-cell { border-bottom: 1px solid var(--line-soft); }
 }
+
+/* the OpenTabletDriver window is open with old numbers */
+.otd-window { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: -4px 0 16px; padding: 12px 14px; border-radius: var(--r-m); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+.otd-window-text { display: flex; gap: 10px; flex: 1 1 260px; font-size: var(--fs-s); color: var(--text-2); }
+.otd-window-text svg { flex: none; width: 16px; height: 16px; margin-top: 2px; }
+.otd-window-text b { color: var(--text); }

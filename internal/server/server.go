@@ -28,7 +28,7 @@ import (
 )
 
 // Version is the application version.
-var Version = "2.3.0"
+var Version = "2.3.3"
 
 // Server is the HTTP front-end.
 type Server struct {

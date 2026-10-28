@@ -22,6 +22,12 @@
   const dateFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
   const dateTime = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   const d = (s) => (s ? new Date(s) : null);
+  // a movement on the tablet (mm, tablet axes) as seen on the screen: the
+  // area may be rotated in OpenTabletDriver, by any angle
+  function userVec(dx, dy, rot) {
+    const t = ((rot || 0) * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t);
+    return [c * dx + s * dy, -s * dx + c * dy];
+  }
   const CAT_COLORS = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)"];
   const CS_COLORS = ["var(--c4)", "var(--c1)", "var(--c3)", "var(--c2)"];
 
@@ -473,7 +479,7 @@
       <p class="lede">Every measure is in millimetres on the tablet, with the area shown. Small errors are normal: what matters is what always repeats the same way.</p></div>${picker}</div>
       ${banner ? `<div class="note-bar">${ICON.info}<span>${esc(banner)}</span></div>` : ""}
       <div class="stats" style="margin-top:22px">
-        <div class="stat"><div class="k">Average offset</div><div class="v readout">${nf(off, 2)}<span class="unit">mm</span></div><div class="h">${off >= 0.1 ? dir(m.offsetX, m.offsetY) : "centred"} · ± ${nf(m.offsetErr, 2)} mm</div></div>
+        <div class="stat"><div class="k">Average offset</div><div class="v readout">${nf(off, 2)}<span class="unit">mm</span></div><div class="h">${off >= 0.1 ? dir(...userVec(m.offsetX, m.offsetY, m.area && m.area.rot)) : "centred"} · ± ${nf(m.offsetErr, 2)} mm</div></div>
         <div class="stat"><div class="k">On jumps you land</div><div class="v readout">${signed(m.jumpGain, 1)}%</div><div class="h">${m.jumpGain >= 0 ? "long" : "short"} · ± ${nf(m.jumpGainErr, 1)}%</div></div>
         <div class="stat"><div class="k">Movement rotation</div><div class="v readout">${signed(m.rotation, 1)}°</div><div class="h">± ${nf(m.rotationErr, 1)}°</div></div>
         <div class="stat"><div class="k">Clicks inside the circle</div><div class="v readout">${pct(m.inside, 1)}</div><div class="h">${nf(m.hits, 0)} notes with this area</div></div>
@@ -981,7 +987,7 @@
     const activeId = (profs.find((x) => x.active) || {}).id;
     view.innerHTML = `<div class="page">
       <div class="row" style="justify-content:space-between">
-        <div><h1 class="h-page">Plays analysed</h1><p class="lede">${nf(state.plays.total, 0)} replays. Click a row to see where you clicked. Each play goes by itself to the grip that was active when you played it; use the menu on the right to move it to another.${multi ? " The analysis only uses the plays of the active grip." : ""}</p></div>
+        <div><h1 class="h-page">Plays analysed</h1><p class="lede">${nf(state.plays.total, 0)} ${state.plays.total === 1 ? "replay" : "replays"}. Only replays saved since you first started Area Coach${state.status?.firstRun ? ` (${dateFmt.format(d(state.status.firstRun))})` : ""} are used. Click a row to see where you clicked. Each play goes by itself to the grip that was active when you played it; use the menu on the right to move it to another.${multi ? " The analysis only uses the plays of the active grip." : ""}</p></div>
         <input class="input" style="max-width:280px" type="search" id="playSearch" placeholder="Search map, mapper or mods" value="${esc(state.plays.q)}">
       </div>
       <div class="table-scroll"><table class="data" style="margin-top:18px"><thead><tr><th>Date</th><th>Map</th><th>Mods</th><th class="num">Acc.</th><th class="num">Average error</th><th class="num">Aim misses</th><th class="num">Area</th><th>Grip</th></tr></thead>
@@ -990,9 +996,9 @@
         return `<tr class="click" data-id="${p.id}"><td class="muted">${dateTime.format(d(p.time))}</td><td><b style="font-weight:600">${esc(mapName(p))}</b>${p.version ? ` <span class="muted">[${esc(p.version)}]</span>` : ""}${p.calibration ? ' <span class="tag">test</span>' : ""}</td><td>${p.modStr ? `<span class="tag mods">${esc(p.modStr)}</span>` : ""}</td><td class="num">${pct(p.accuracy, 2)}</td><td class="num">${pct(p.normErr, 0)}</td><td class="num">${nf(p.summary.aimMiss, 0)}</td><td class="num">${e ? `${nfTrim(e.setup.area.w, 1)} mm` : '<span class="muted">unknown</span>'}</td><td class="grip-cell"><select class="grip-sel ${p.profile === activeId ? "" : "other"}" data-pprof="${p.id}" aria-label="Grip of the play">${profs.map((x) => `<option value="${x.id}" ${x.id === p.profile ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></td></tr>`;
       }).join("")}</tbody></table></div>
       ${rows.length < state.plays.total ? `<div style="margin-top:14px"><button class="btn" id="morePlays">Show more</button></div>` : ""}
-      ${!rows.length ? needsData("No replays yet", "Play a map and finish it: osu! saves the replay and the program analyses it automatically.") : ""}
+      ${!rows.length ? needsData("No replays yet", "Play a map and finish it: osu! saves the replay and the program analyses it automatically. Replays from before you started Area Coach aren't used.") : ""}
       ${skippedSection()}
-      <section class="section">${sectionHead("Which replays I pick up", "osu! saves a replay by itself only when you finish a map playing solo (it goes into the hidden Data/r folder). In multiplayer it never saves one, and when you fail it doesn't either: in those cases press F2 on the results or game-over screen, osu! puts it in the Replays folder and I pick it up from there. If you quit halfway with Esc there is no replay. I don't use replays with Relax, Autopilot, Auto, Cinema or Target, replays of other players, or replays of maps that aren't osu!standard.")}${foldersBox()}</section>
+      <section class="section">${sectionHead("Which replays I pick up", "Only the ones saved since you first started Area Coach: older replays are ignored. osu! saves a replay by itself only when you finish a map playing solo (it goes into the hidden Data/r folder). In multiplayer it never saves one, and when you fail it doesn't either: in those cases press F2 on the results or game-over screen, osu! puts it in the Replays folder and I pick it up from there. If you quit halfway with Esc there is no replay. I don't use replays with Relax, Autopilot, Auto, Cinema or Target, or replays of maps that aren't osu!standard.")}${foldersBox()}</section>
     </div>`;
     const s = $("#playSearch");
     s.addEventListener("input", () => {
@@ -1097,10 +1103,10 @@
       <li><b>Play each map from start to finish with the same area.</b> When you pass a map playing solo, osu! saves the replay by itself: that's what I measure everything from. <b>In multiplayer osu! never saves it</b>: press F2 on the results screen. <b>If you fail, press F2 on the game-over screen</b>: osu! saves the replay of the part you played in the Replays folder, and I use it up to where you got. With NoFail you never fail and don't need to press anything. If you quit halfway with Esc there is no replay, and that map doesn't count.</li>
       <li><b>Varied maps</b>: jumps, streams, high AR, small and big circles. Your usual ones or a bit harder. The more jumps there are, the sooner I know whether you land long or short.</li>
       <li><b>Play normally</b>, without correcting yourself: the area adapts to you. Even if at first, with the whole tablet, you hit almost nothing: from how you move the pen I can tell how short you land.</li>
-      <li><b>Every map has a slightly different area</b>: the best found so far, a bit bigger or smaller in turn. It isn't a mistake: that's how I find the width you're most precise and steady with. The differences shrink as the perfection percentage goes up.</li>
+      <li><b>Every map has a slightly different area</b>: the best found so far, a bit bigger or smaller in turn and by varying amounts. It isn't a mistake: that's how I find the width you're most precise and steady with. The differences shrink as the perfection percentage goes up.</li>
       <li><b>At the end of the map</b>, as soon as osu! saves the replay (you're on the results screen), I work out the area for the next map and put it in OpenTabletDriver, saved. It takes a few seconds: before starting the next map, check that the new area has arrived here.</li>
       <li><b>What it uses.</b> Only the replays osu! saves to disk, as in the normal analysis. The area in OpenTabletDriver is changed only between maps, as you would by hand.</li>
-      <li><b>The OpenTabletDriver window</b>, if it's open, doesn't update its numbers by itself: use the "Refresh it" button here, and don't press Apply or Save there with the old numbers.</li>
+      <li><b>The OpenTabletDriver window</b> can stay open: it keeps showing the area numbers from when you opened it, and that's fine. If you press Apply or Save there, I put the right area back by myself.</li>
     </ul>`;
   const sidePair = (dx, dy) => {
     const parts = [];
@@ -1116,7 +1122,7 @@
   // what a map measured, in words
   function mapWords(m) {
     const parts = [`on jumps you land ${gainTxt2(m.g || 0)}`];
-    const off = sidePair(m.dx || 0, m.dy || 0);
+    const off = sidePair(...userVec(m.dx || 0, m.dy || 0, m.area && m.area.rot));
     parts.push(off.length ? `clicks ${off.join(" and ")} of the circles` : "clicks centred on the circles");
     if (Math.abs(m.rot || 0) >= 0.3) parts.push(`jumps turned ${nf(Math.abs(m.rot), 1)}° ${m.rot > 0 ? "clockwise" : "anticlockwise"}`);
     parts.push(m.aimMiss ? `${m.aimMiss} aim ${m.aimMiss === 1 ? "miss" : "misses"}` : "no aim misses");
@@ -1134,7 +1140,7 @@
       if (Math.abs(dh) >= 0.0005) parts.push(`${mmTxt(Math.abs(dh))} mm ${dh > 0 ? "taller" : "shorter"}`);
     }
     const mv = [];
-    const dx = to.x - from.x, dy = to.y - from.y;
+    const [dx, dy] = userVec(to.x - from.x, to.y - from.y, to.rot);
     if (Math.abs(dx) >= 0.0005) mv.push(`${mmTxt(Math.abs(dx))} mm ${dx > 0 ? "right" : "left"}`);
     if (Math.abs(dy) >= 0.0005) mv.push(`${mmTxt(Math.abs(dy))} mm ${dy > 0 ? "down" : "up"}`);
     if (mv.length) parts.push(`moved ${mv.join(" and ")}`);
@@ -1178,7 +1184,12 @@
       if (Math.abs(sh) >= 0.1) t += ` (that's why I moved it ${nfTrim(Math.abs(sh), 1)} mm ${sh < 0 ? minus : plus})`;
       return t;
     };
-    const ps = [part(s.gx, s.gxse, s.shiftX, "right", "left"), part(s.gy, s.gyse, s.shiftY, "down", "up")].filter(Boolean);
+    // as seen on the screen: the area may be rotated
+    const rot = ((((a.cur && a.cur.rot) || 0) * Math.PI) / 180), rc = Math.abs(Math.cos(rot)), rs = Math.abs(Math.sin(rot));
+    const [gx, gy] = userVec(s.gx || 0, s.gy || 0, a.cur && a.cur.rot);
+    const [shx, shy] = userVec(s.shiftX || 0, s.shiftY || 0, a.cur && a.cur.rot);
+    const gxse = Math.hypot(rc * (s.gxse || 0), rs * (s.gyse || 0)), gyse = Math.hypot(rs * (s.gxse || 0), rc * (s.gyse || 0));
+    const ps = [part(gx, gxse, shx, "right", "left"), part(gy, gyse, shy, "down", "up")].filter(Boolean);
     if (!ps.length) return `<b>No clear difference</b><span class="muted small">around the place found you're just as steady a little right, left, above or below: the position is decided by where the clicks land</span>`;
     return `<b>${ps.length === 2 ? "Two sides" : "One side is better"}</b><span class="muted small">${esc(ps.join("; "))}. If moving the area doesn't change where your clicks land against the circles (your wrist follows it), where you're steadier matters more.</span>`;
   }
@@ -1192,7 +1203,9 @@
     let t = "";
     if (r.strong) {
       const g = Math.hypot(r.gx || 0, r.gy || 0);
-      const side = Math.abs(r.dir) < 10 ? "the pivot (wrist or elbow) is right below the area" : r.dir < 0 ? "the wrist is below and to the right of the area" : "the wrist is below and to the left of the area";
+      // the side of the pivot as seen on the screen (the area may be rotated)
+      const dir = ((((r.dir || 0) - ((a.cur && a.cur.rot) || 0)) % 360) + 540) % 360 - 180;
+      const side = Math.abs(dir) < 10 ? "the pivot (wrist or elbow) is right below the area" : dir < 0 ? "the wrist is below and to the right of the area" : "the wrist is below and to the left of the area";
       t += `From left to right the rotation changes by ${nf(g, 2)}° every 10 mm: ${side}. `;
     }
     if (a.posFixed) t += "With the position held I don't move the area for the rotation. ";
@@ -1396,9 +1409,9 @@
       const fw = (a.fit || {}).freeW;
       const blockTxt = !lastPlayed || !lastPlayed.blocked || !(lastPlayed.next && a.cur && Math.abs(lastPlayed.next.w - a.cur.w) < 0.05) ? ""
         : lastPlayed.blocked === "reach" ? "You play this one with the best area found: I don't try it bigger, because with your fastest maps you wouldn't reach the circles in time. The next one tries a little smaller. "
-        : `You play this one with the best area found: I don't try it ${lastPlayed.blocked === "min" ? "smaller" : "bigger"}, because ${nfTrim(lastPlayed.limit, 1)} mm is the ${lastPlayed.blocked === "min" ? "minimum" : "maximum"} width you set${fw ? ` (without that limit the best would be about ${nfTrim(fw, 1)} mm)` : ""}. The next one tries a little ${lastPlayed.blocked === "min" ? "bigger" : "smaller"} again: that's why two areas alternate. `;
+        : `You play this one with the best area found: I don't try it ${lastPlayed.blocked === "min" ? "smaller" : "bigger"}, because ${nfTrim(lastPlayed.limit, 1)} mm is the ${lastPlayed.blocked === "min" ? "minimum" : "maximum"} width you set${fw ? ` (without that limit the best would be about ${nfTrim(fw, 1)} mm)` : ""}. The next one tries a little ${lastPlayed.blocked === "min" ? "bigger" : "smaller"} again, by a different amount: that's why this width comes back every other map. `;
       const curIsNext = lastPlayed && lastPlayed.next && a.cur && Math.abs(lastPlayed.next.w - a.cur.w) < 0.05 && Math.abs(lastPlayed.next.x - a.cur.x) < 0.05;
-      const pt = curIsNext ? [lastPlayed.ptx || 0, lastPlayed.pty || 0] : [0, 0];
+      const pt = curIsNext ? userVec(lastPlayed.ptx || 0, lastPlayed.pty || 0, a.cur && a.cur.rot) : [0, 0];
       const placeTxt = Math.abs(pt[0]) >= 0.05 ? `I also move it ${nfTrim(Math.abs(pt[0]), 1)} mm ${pt[0] > 0 ? "right" : "left"} of the best place: every two maps I try a different side (right, left, below, above), to see where you're steadiest. `
         : Math.abs(pt[1]) >= 0.05 ? `I also move it ${nfTrim(Math.abs(pt[1]), 1)} mm ${pt[1] > 0 ? "lower" : "higher"} than the best place: every two maps I try a different side (right, left, below, above), to see where you're steadiest. ` : "";
       const tryTxt0 = a.try && Math.abs(a.try) >= 0.003 ? `You play this one ${nf(Math.abs(Math.exp(a.try) - 1) * 100, 1)}% ${a.try > 0 ? "bigger" : "smaller"} than the best area found: every map tries a slightly different width, and all of them help to find the right one. ` : blockTxt;
@@ -1422,7 +1435,7 @@
     const btns = `${a.active ? `<button class="btn small" id="adPause">Pause</button>` : `<button class="btn primary" id="adResume" ${c.liveOk ? "" : "disabled"}>Resume</button>`}
         <button class="btn small ghost" id="adRestore">Back to the previous area</button>`;
     const otdWin = a.otdWindow
-      ? `<div class="note-bar" style="margin-top:14px">${ICON.info}<span>The OpenTabletDriver window is open and shows the numbers from when you opened it, not the current area. If you press Apply or Save there (for example to set the filter), I put the right area back straight away. <button class="btn small ghost" id="adOtdWin" style="margin-left:6px">Refresh it</button></span></div>`
+      ? `<div class="otd-window"><div class="otd-window-text">${ICON.info}<span><b>The OpenTabletDriver window is open: its area numbers are old.</b> It keeps showing the area from when you opened it. Nothing to do: if you press Apply or Save there (for example to set the filter), I put the right area back by myself. Press the button only if you want to see the current numbers in it.</span></div><button class="btn" id="adOtdWin">Show the current area in OpenTabletDriver</button></div>`
       : "";
     const missNote = a.localModel ? " For this profile there aren't enough earlier replays to predict them from: I work them out from the diagnosis maps, and they get more precise map after map." : "";
     if (state.diagResetFrom == null) state.diagResetFrom = "full";
@@ -1433,6 +1446,7 @@
       <div class="panel"><div class="chart" id="adTablet"></div>
         <div class="legend-row"><span class="swatch now"><i></i>In OpenTabletDriver now</span><span class="swatch next"><i></i>Area found</span><span class="swatch pf"><i></i>Before the diagnosis</span><span><i class="dot" style="--c:var(--text-3)"></i>centres used</span></div></div>
       <div class="panel live-now">
+        ${otdWin}
         ${head}
         <div class="big-area readout">${rectTxt(a.cur)}<small>${posTxt(a.cur)}</small></div>
         ${perfBlock(a)}
@@ -1446,7 +1460,6 @@
           <div class="kv-line"><span>Filter</span>${filterLine(a)}</div>
         </div>
         <div class="row" style="margin-top:14px;flex-wrap:wrap">${btns}</div>
-        ${otdWin}
         ${!a.active && !c.liveOk ? `<p class="xs muted" style="margin-top:8px">To resume, OpenTabletDriver 0.6 must be running.</p>` : ""}
         <div class="row" style="margin-top:16px;align-items:flex-end;gap:10px;flex-wrap:wrap">${rangeField("adRangeLive")}</div>
         <p class="xs muted" style="margin-top:4px">${esc(rangeWords())}${(state.status.settings || {}).diagMinW > 0 ? " If you change the limits, the area found is worked out again and I set it straight away." : ""}</p>
@@ -1457,7 +1470,7 @@
         <div class="row" style="margin-top:12px;align-items:center;gap:10px"><span class="small">Keep the area if no aim miss</span><div class="seg" role="group" aria-label="Keep the area if no aim miss"><button data-hold="1" class="${a.holdClean ? "on" : ""}" aria-pressed="${!!a.holdClean}">On</button><button data-hold="0" class="${a.holdClean ? "" : "on"}" aria-pressed="${!a.holdClean}">Off</button></div></div>
         <p class="xs muted" style="margin-top:4px">${a.holdClean ? "If in a map you don't miss a single circle by clicking outside it, you play the next one with the same area. Misses from notelock or notes not pressed don't count. What I measured in that map I keep anyway." : "At the end of a map the area always changes, even if you didn't miss: clean maps also say which width you're most precise with. With On, after a map without aim misses I keep the same area."}</p>
         <div class="row" style="margin-top:12px;align-items:center;gap:10px;flex-wrap:wrap"><span class="small">Size</span><div class="seg" role="group" aria-label="Area size"><button data-size="size-free" class="${a.sizeFixed ? "" : "on"}" aria-pressed="${!a.sizeFixed}">Adapts</button><button data-size="size-fixed" class="${a.sizeFixed ? "on" : ""}" aria-pressed="${!!a.sizeFixed}">Fixed: only move it</button></div></div>
-        <p class="xs muted" style="margin-top:4px">${a.sizeFixed ? `The size stays ${esc(rectTxt({ w: a.sizeW, h: a.sizeH }))} on every map: the analysis only decides where to put it (where your clicks land and where the aim comes out straight).` : `With every replay the area changes: the best found so far, a little bigger or smaller in turn (from ${nf((a.tryMin || 0.02) * 100, 0)}% to ${nf((a.tryMax || 0.08) * 100, 0)}%, less as the diagnosis gets sure). Every width tried says how precise and steady you are with it, and all of them count for the next area. Fixed: keeps the current size and only moves it.`}</p>
+        <p class="xs muted" style="margin-top:4px">${a.sizeFixed ? `The size stays ${esc(rectTxt({ w: a.sizeW, h: a.sizeH }))} on every map: the analysis only decides where to put it (where your clicks land and where the aim comes out straight).` : `With every replay the area changes: the best found so far, a little bigger or smaller in turn and by varying amounts, so that the widths in between are played too (up to ${nf((a.tryMax || 0.08) * 100, 0)}%, less as the diagnosis gets sure). Every width tried says how precise and steady you are with it, and all of them count for the next area. Fixed: keeps the current size and only moves it.`}</p>
         <p class="xs muted" style="margin-top:12px">${a.nMaps === 1 ? "One map measured" : `${a.nMaps} maps measured`} (${a.n} stretches). Shape ${shapeName(" ")}. Before the diagnosis you had ${rectTxt(a.base)}.</p>
         <details class="why" style="margin-top:12px"><summary>How to play</summary>${DIAG_TIPS}</details>
         <details class="why" style="margin-top:6px" ${state.diagResetOpen ? "open" : ""} id="adResetBox"><summary>Start over</summary>
@@ -1543,7 +1556,7 @@
       const area = m.area && m.area.w ? rectTxt(m.area) : "–";
       const cols = 10 + (anyFilter ? 1 : 0);
       if (!m.windows) return `<tr><td>${esc(m.title)}</td><td class="readout">${area}</td><td colspan="${cols - 2}" class="small muted">not used: ${esc(m.note || "too few measurable notes")}</td></tr>`;
-      const off = sidePair(m.dx || 0, m.dy || 0).join(", ") || "centred";
+      const off = sidePair(...userVec(m.dx || 0, m.dy || 0, m.area && m.area.rot)).join(", ") || "centred";
       const after = m.held ? `<span class="tag ok" title="No aim misses: you played the next map with the same area">kept</span>` : m.next && m.next.w ? esc(changeWords(m.area, m.next, a.locked).replace(/^area /, "")) : "–";
       const tried = m.try && Math.abs(m.try) >= 0.003 ? ` <span class="tag" title="You played the next map a little ${m.try > 0 ? "bigger" : "smaller"} than the best area found, to try another width">${m.try > 0 ? "+" : "−"}${nf(Math.abs(Math.exp(m.try) - 1) * 100, 0)}%</span>` : "";
       const miss = `${m.aimMiss || 0}${m.exp > 0 ? ` <span class="muted xs">/ ${nf(m.exp, 1)}</span>` : ""}`;
@@ -1645,7 +1658,7 @@
     on("adPause", () => calibDo("pause", "Diagnosis paused: the area found stays in OpenTabletDriver"));
     on("adOtdWin", async (ev) => {
       ev.currentTarget.disabled = true;
-      try { await api("otd-window", {}); toast("OpenTabletDriver window reopened: it now shows the current area"); } catch (e) { toast(e.message); }
+      try { await api("otd-window", {}); toast("OpenTabletDriver window reopened: it now shows the current area. You don't need to do it after every map."); } catch (e) { toast(e.message); }
       setTimeout(async () => { await refreshStatus(); render(); }, 1500);
     });
     on("adResume", () => calibDo("resume", "Diagnosis resumed"));
@@ -1716,12 +1729,11 @@
       ${warnList(env.warnings)}
       <div class="grid-2 section">
         <div class="panel"><h3>osu!</h3><p class="sub">${env.osuFound ? "Folder found" : "Folder not found"}</p>
-          <dl class="kv"><dt>Folder</dt><dd>${esc(env.osuDir || "–")}</dd><dt>Configuration</dt><dd>${esc(env.cfgPath || "–")}</dd><dt>Player</dt><dd>${esc(g.username || "–")}</dd><dt>Resolution</dt><dd>${env.setup ? `${nf(env.setup.gameW, 0)} × ${nf(env.setup.gameH, 0)}` : "–"} ${g.fullscreen ? "fullscreen" : "windowed"}</dd><dt>Screen</dt><dd>${nf(env.screenW, 0)} × ${nf(env.screenH, 0)}</dd><dt>Sensitivity</dt><dd>${g.mouseSpeed != null ? nf(g.mouseSpeed, 2) : "–"}</dd><dt>Maps indexed</dt><dd>${nf(env.mapsIndexed, 0)}</dd></dl>
+          <dl class="kv"><dt>Folder</dt><dd>${esc(env.osuDir || "–")}</dd><dt>Configuration</dt><dd>${esc(env.cfgPath || "–")}</dd><dt>Resolution</dt><dd>${env.setup ? `${nf(env.setup.gameW, 0)} × ${nf(env.setup.gameH, 0)}` : "–"} ${g.fullscreen ? "fullscreen" : "windowed"}</dd><dt>Screen</dt><dd>${nf(env.screenW, 0)} × ${nf(env.screenH, 0)}</dd><dt>Sensitivity</dt><dd>${g.mouseSpeed != null ? nf(g.mouseSpeed, 2) : "–"}</dd><dt>Maps indexed</dt><dd>${nf(env.mapsIndexed, 0)}</dd></dl>
           <div class="field" style="margin-top:14px"><label for="osuDir">osu! folder (empty = automatic)</label><div class="row"><input class="input" id="osuDir" value="${esc(set.osuDir || "")}" placeholder="${esc(env.osuDir || "C:\\Users\\…\\AppData\\Local\\osu!")}" style="flex:1"><button class="btn" data-save="osuDir">Save</button></div></div>
           <div class="row" style="margin-top:12px">
             <div class="field" style="flex:1"><label for="gameW">Game resolution (empty = automatic)</label><div class="row"><input class="input" id="gameW" inputmode="numeric" value="${set.gameW || ""}" placeholder="${env.setup?.gameW ? Math.round(env.setup.gameW) : ""}" style="width:100px"><span class="muted">×</span><input class="input" id="gameH" inputmode="numeric" value="${set.gameH || ""}" placeholder="${env.setup?.gameH ? Math.round(env.setup.gameH) : ""}" style="width:100px"><button class="btn" id="saveRes">Save</button></div></div>
           </div>
-          <div class="field" style="margin-top:12px"><label for="playerName">Player name to analyse (empty = the one in osu!)</label><div class="row"><input class="input" id="playerName" value="${esc(set.playerName || "")}" placeholder="${esc(g.username || "")}" style="flex:1"><button class="btn" data-save="playerName">Save</button></div></div>
         </div>
         <div class="panel"><h3>OpenTabletDriver</h3><p class="sub">${env.otdFound ? "Settings read" : "Settings not found"}</p>
           <dl class="kv"><dt>File</dt><dd>${esc(env.otdPath || "–")}</dd><dt>Tablet</dt><dd>${esc(prof ? prof.tablet : "–")}</dd><dt>Active surface</dt><dd>${env.setup && env.setup.tabletW ? `${nfTrim(env.setup.tabletW, 1)} × ${nfTrim(env.setup.tabletH, 1)} mm` : "unknown"}</dd><dt>Area</dt><dd>${prof ? `${nfTrim(prof.area.w)} × ${nfTrim(prof.area.h)} mm, centre ${nfTrim(prof.area.x)}, ${nfTrim(prof.area.y)}, ${nfTrim(prof.area.rot)}°` : "–"}</dd><dt>Screen mapped</dt><dd>${prof ? `${nfTrim(prof.display.w)} × ${nfTrim(prof.display.h)} px, centre ${nfTrim(prof.display.x)}, ${nfTrim(prof.display.y)}` : "–"}</dd><dt>Mode</dt><dd>${prof ? (prof.absolute ? "absolute" : "relative") : "–"}</dd></dl>
@@ -1740,7 +1752,7 @@
           <p class="xs muted" style="margin-top:10px">The plays made from now on go to the active profile. If a play ended up in the wrong profile, change it from its details on the Plays page.</p>
         </div>
       </section>
-      <section class="section">${sectionHead("Area history", "Plays are assigned to the area in use at that moment. If you used the current area before the date detected, move it earlier: more plays go into the analysis.")}
+      <section class="section">${sectionHead("Area history", "Plays are assigned to the area in use at that moment. If the change was detected late, move the date earlier: more plays go into the analysis.")}
         <div class="panel">
           ${cur ? `<div class="row" style="align-items:flex-end;gap:16px">
             <div class="field"><label for="curFrom">I've used the current area since</label><input class="input" type="datetime-local" id="curFrom" value="${toLocalInput(cur.from)}"></div>
@@ -1748,18 +1760,11 @@
             <label class="row small" style="gap:8px;margin-left:auto"><input type="checkbox" id="adapted" ${cur.adapted || cur.established ? "checked" : ""} ${cur.established ? "disabled" : ""}> I'm already used to this area</label>
           </div>` : `<p class="muted small">No area recorded.</p>`}
           <div class="table-scroll"><table class="data" style="margin-top:16px"><thead><tr><th>From</th><th>To</th><th>Area</th><th>Source</th><th></th></tr></thead><tbody>${epochs.slice().reverse().map((e) => `<tr><td>${dateTime.format(d(e.from))}</td><td>${e.to ? dateTime.format(d(e.to)) : '<span class="tag cur">in use</span>'}</td><td class="readout">${nfTrim(e.setup.area.w)} × ${nfTrim(e.setup.area.h)} mm · ${nfTrim(e.setup.area.x)}, ${nfTrim(e.setup.area.y)}</td><td class="muted">${srcName(e)}</td><td>${e.source === "manuale" ? `<button class="btn small ghost" data-rm="${e.id}">Delete</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
-          <details class="why" style="margin-top:10px"><summary>Add an area used in the past</summary>
-            <div class="row" style="margin-top:10px;align-items:flex-end">
-              ${["w", "h", "x", "y", "rot"].map((k) => `<div class="field"><label for="pa_${k}">${{ w: "Width", h: "Height", x: "X", y: "Y", rot: "Rotation" }[k]}</label><input class="input" id="pa_${k}" inputmode="decimal" style="width:96px" placeholder="${k === "rot" ? "0" : ""}"></div>`).join("")}
-              <div class="field"><label for="pa_from">Used since</label><input class="input" type="date" id="pa_from"></div>
-              <button class="btn" id="addPast">Add</button>
-            </div></details>
         </div>
       </section>
       <div class="grid-2 section">
         <div class="panel"><h3>Data</h3><p class="sub">Analysed replays, history and settings are saved here.</p>
-          <dl class="kv"><dt>Folder</dt><dd>${esc(s.dataDir)}</dd><dt>Plays</dt><dd>${nf(s.plays, 0)}</dd></dl>
-          <div class="field" style="margin-top:12px"><label for="maxImport">Most recent replays to analyse</label><div class="row"><input class="input" id="maxImport" inputmode="numeric" value="${set.maxImport || 1500}" style="width:120px"><button class="btn" data-save="maxImport" data-num="1">Save</button></div></div>
+          <dl class="kv"><dt>Folder</dt><dd>${esc(s.dataDir)}</dd><dt>Plays</dt><dd>${nf(s.plays, 0)}</dd><dt>Replays used</dt><dd>${s.firstRun ? `saved since ${dateTime.format(d(s.firstRun))}, the first start` : "–"}</dd></dl>
           <div class="row" style="margin-top:14px"><button class="btn" id="openData">${ICON.folder}Open the folder</button><button class="btn ghost" id="reimport">Re-import all replays</button></div>
         </div>
         <div class="panel"><h3>Appearance</h3><p class="sub">Interface theme.</p>
@@ -1791,12 +1796,6 @@
     const ad = $("#adapted");
     if (ad && !ad.disabled) ad.addEventListener("change", async () => { await api("epoch", { action: "adapted", id: cur.id, adapted: ad.checked }); toast("Saved"); refreshStatus(); });
     $$("[data-rm]", view).forEach((b) => b.addEventListener("click", async () => { try { await api("epoch", { action: "remove", id: +b.dataset.rm }); refreshStatus(); } catch (e) { toast(e.message); } }));
-    $("#addPast").addEventListener("click", async () => {
-      const num = (k) => parseFloat(($("#pa_" + k).value || "0").replace(",", "."));
-      const from = $("#pa_from").value;
-      if (!from) { toast("Say since when you used that area"); return; }
-      try { await api("epoch", { action: "add", area: { w: num("w"), h: num("h"), x: num("x"), y: num("y"), rot: num("rot") }, from: new Date(from + "T00:00:00").toISOString() }); toast("Area added"); refreshStatus(); } catch (e) { toast(e.message); }
-    });
     $$("[data-puse]", view).forEach((b) => b.addEventListener("click", () => switchProfile(+b.dataset.puse)));
     $$("[data-prename]", view).forEach((b) => b.addEventListener("click", async () => {
       const id = +b.dataset.prename;

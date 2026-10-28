@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.3.3
+
+- Replays are no longer filtered by player name: replays saved while not logged in
+  (osu! leaves the name empty) or with a different name in the osu! config are used too.
+  The "Player name to analyse" setting is gone.
+- The OpenTabletDriver window can stay open: when it saves an old area (Save with the old
+  numbers), the diagnosis area is put back in the file too, instead of pausing. The notice
+  about the window is clearer, with a "Show the current area in OpenTabletDriver" button.
+- Once the diagnosis is sure enough, the width tries vary in size, so the widths in
+  between are played too instead of always the same two areas.
+
+## 2.3.2
+
+- Works with any area rotation in OpenTabletDriver (90°, 180°, 270° or any other angle):
+  the first area is the largest that fits the tablet turned that way, every area stays
+  inside the tablet, the side tries and the turned-aim correction follow the area's own
+  width and height, and directions in the interface are as seen on the screen.
+
+## 2.3.1
+
+- Only the replays saved since you first started Area Coach are used: your old replays
+  are no longer imported (with a big replay folder that import could take very long).
+  Plays from before the first start are removed from the analysis.
+
 ## 2.3.0 — first public release
 
 - Interface, messages and log in English.

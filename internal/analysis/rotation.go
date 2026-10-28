@@ -59,11 +59,12 @@ type ArcFit struct {
 	// the pivot to the left, - to the right (degrees)
 	Dir   float64 `json:"dir"`
 	DirSE float64 `json:"dirSe"`
-	// the turning clearly changes from left to right: where it is zero can
-	// be told
+	// the turning clearly changes from left to right (along the area's own
+	// width, whatever its rotation): where it is zero can be told
 	Strong bool `json:"strong"`
-	// how far sideways the aim would come out straight (mm, + to the right),
-	// and how far the area slides now; why not when it does not
+	// how far sideways (along the area's width) the aim would come out
+	// straight (mm, + toward the right of the screen), and how far the area
+	// slides now; why not when it does not
 	Zero  float64 `json:"zero"`
 	Shift float64 `json:"shift"`
 	Note  string  `json:"note,omitempty"`
@@ -136,7 +137,6 @@ func arcFit(ps []CalibPoint, cur otd.Rect) ArcFit {
 	pse := math.Sqrt(sv*n/(n-1)) / su
 	g := math.Hypot(gx, gy)
 	se := math.Sqrt(math.Max(vxx+vyy, 0) / 2)
-	sex := math.Sqrt(math.Max(vxx, 0))
 	deg := 180 / math.Pi
 	out.Mean, out.MeanSE = round(psi*deg, 2), round(pse*deg, 2)
 	out.GX, out.GY, out.SE = round(gx*deg*10, 3), round(gy*deg*10, 3), round(se*deg*10, 3)
@@ -147,13 +147,18 @@ func arcFit(ps []CalibPoint, cur otd.Rect) ArcFit {
 		dvar := (gy*gy*vxx + gx*gx*vyy - 2*gx*gy*vxy) / (g * g * g * g)
 		out.Dir, out.DirSE = round(dir*deg, 1), round(math.Sqrt(math.Max(dvar, 0))*deg, 1)
 	}
-	out.Strong = math.Abs(gx) >= 3*sex && math.Abs(gx)*deg*10 >= 0.3
+	// sideways is along the area's width: the tablet's x axis, or another
+	// one when the area is rotated
+	c, sn := areaAxis(cur)
+	gu := gx*c + gy*sn
+	seu := math.Sqrt(math.Max(c*c*vxx+sn*sn*vyy+2*c*sn*vxy, 0))
+	out.Strong = math.Abs(gu) >= 3*seu && math.Abs(gu)*deg*10 >= 0.3
 	if !out.Strong {
 		out.Note = "the aim rotation doesn't change enough from one side of the area to the other to tell where it would come out straight"
 		return out
 	}
-	// moving sideways by x changes the turning by gx·x
-	out.Zero = round(-psi/gx, 2)
+	// moving sideways by u changes the turning by gu·u
+	out.Zero = round(-psi/gu, 2)
 	if math.Abs(psi) < math.Max(2*pse, 0.4/deg) || math.Abs(out.Zero) < 1 {
 		out.Note = "the aim is already straight with this area"
 		return out
@@ -162,18 +167,28 @@ func arcFit(ps []CalibPoint, cur otd.Rect) ArcFit {
 	return out
 }
 
-// arcPlace is where the area goes sideways, from cur (width w): between
-// where the aim comes out straight and where the clicks land centred (land,
-// whose landing changes by b mm for each mm the area moves). Each costs what
-// it does to the clicks: turned aim an error growing with the jump (about a
-// quarter of the width), a hand used to another place an offset on every
-// click. At most arcStepMax from cur.
+// areaAxis is the direction of the area's width on the tablet: the way the
+// screen's left-to-right goes there.
+func areaAxis(r otd.Rect) (c, s float64) {
+	th := r.Rot * math.Pi / 180
+	return math.Cos(th), math.Sin(th)
+}
+
+// arcPlace is where the area goes sideways (along its width, as a distance
+// along areaAxis), from cur (width w): between where the aim comes out
+// straight and where the clicks land centred (land, whose landing changes by
+// b mm for each mm the area moves). Each costs what it does to the clicks:
+// turned aim an error growing with the jump (about a quarter of the width),
+// a hand used to another place an offset on every click. At most arcStepMax
+// from cur.
 func arcPlace(a *ArcFit, cur otd.Rect, land, b, w float64) float64 {
-	zero := cur.X
+	c, sn := areaAxis(cur)
+	at := cur.X*c + cur.Y*sn
+	zero := at
 	if a.Shift != 0 {
-		zero = cur.X + a.Zero
+		zero = at + a.Zero
 	}
-	g := math.Abs(a.GX) / 10 * math.Pi / 180 // radians per mm
+	g := math.Abs(a.GX*c+a.GY*sn) / 10 * math.Pi / 180 // radians per mm
 	t := g * 0.25 * w
 	t2, b2 := t*t, b*b
 	x := zero
@@ -187,7 +202,7 @@ func arcPlace(a *ArcFit, cur otd.Rect, land, b, w float64) float64 {
 		}
 		a.Note = "the hand is used to clicking further " + side + ": I move it towards where the aim comes out straight only as long as the clicks stay centred"
 	}
-	return clamp(x, cur.X-arcStepMax, cur.X+arcStepMax)
+	return clamp(x, at-arcStepMax, at+arcStepMax)
 }
 
 // How far the area slides for the arc: at most this much after one map, and

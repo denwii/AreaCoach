@@ -133,6 +133,10 @@ func (r *AdaptRun) Rest() otd.Rect { return AdaptNext(r.Cur, r.Fit.Target, r.Opt
 // Until it is known how the steadiness of the hand changes with the width
 // (its trend known within AdaptTrySE), at least AdaptTryLearn: smaller
 // differences hardly show it.
+// adaptTrySteps are the shares of the try amount used in turn, each for a
+// pair of maps (one wider, one narrower).
+var adaptTrySteps = [...]float64{1, 0.5, 0.75}
+
 const (
 	AdaptTryMin   = 0.02
 	AdaptTryMax   = 0.08
@@ -157,6 +161,11 @@ func (r *AdaptRun) Next(clean bool) (otd.Rect, float64) {
 	amp := clamp(r.Fit.Score.Spread, AdaptTryMin, AdaptTryMax)
 	if p := r.Fit.Prec; r.Opts.Miss.OK() && (p.N < 8 || p.SE > AdaptTrySE) {
 		amp = math.Max(amp, AdaptTryLearn)
+	} else {
+		// once the steadiness by width is known, by a varying amount too
+		// (each size of try in both directions), so that the widths in
+		// between are played as well, not always the same two or three
+		amp *= adaptTrySteps[(r.Dither/2)%len(adaptTrySteps)]
 	}
 	sg := 1.0
 	if r.Dither%2 == 1 {
@@ -207,15 +216,19 @@ func (r *AdaptRun) placeTry(a otd.Rect) otd.Rect {
 	}
 	pc := r.Fit.Prec
 	phase := (r.Dither / 2) % 4
-	se := pc.GXSE
+	// right, left, down, up as seen on the screen: along the area's own
+	// width and height, whatever its rotation on the tablet
+	c, sn := areaAxis(a)
+	se := math.Hypot(c*pc.GXSE, sn*pc.GYSE)
 	if phase >= 2 {
-		se = pc.GYSE
+		se = math.Hypot(sn*pc.GXSE, c*pc.GYSE)
 	}
 	amp := AdaptPlaceTry
 	if pc.N >= 8 && se > 0 && se <= adaptPlaceKnown {
 		amp = AdaptPlaceTrySure
 	}
-	d := [4][2]float64{{amp, 0}, {-amp, 0}, {0, amp}, {0, -amp}}[phase]
+	l := [4][2]float64{{amp, 0}, {-amp, 0}, {0, amp}, {0, -amp}}[phase]
+	d := [2]float64{c*l[0] - sn*l[1], sn*l[0] + c*l[1]}
 	p := AdaptShape(otd.Rect{W: a.W, H: a.H, X: a.X + d[0], Y: a.Y + d[1], Rot: a.Rot}, r.Opts)
 	r.PlaceTry = [2]float64{round(p.X-a.X, 2), round(p.Y-a.Y, 2)}
 	return p

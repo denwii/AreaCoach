@@ -190,8 +190,9 @@ func (e *Engine) recheckRecent() {
 		return
 	}
 	var paths []string
+	from := e.st.UseFrom()
 	for _, f := range e.listReplays(env.OsuDir) {
-		if time.Since(f.mod) > 7*24*time.Hour {
+		if time.Since(f.mod) > 7*24*time.Hour || f.mod.Before(from) {
 			break // newest first
 		}
 		paths = append(paths, f.path)
@@ -278,6 +279,11 @@ func (e *Engine) Wake() {
 
 // Run starts the background loop.
 func (e *Engine) Run() {
+	// only the replays saved since the first start count
+	if n := e.st.DropPlaysBefore(e.st.UseFrom()); n > 0 {
+		log.Printf("removed %d plays saved before the first start (%s): only newer replays are used", n, e.st.UseFrom().Local().Format("2006-01-02 15:04"))
+		_ = e.st.Save()
+	}
 	e.checkReplayClock()
 	e.diagResume()
 	if n := e.st.MergeRepeatedEpochs(); n > 0 {
@@ -626,10 +632,14 @@ func (e *Engine) scanReplays() {
 	files := e.listReplays(env.OsuDir)
 	st := e.st.State()
 	limit := st.Settings.MaxImport
+	from := e.st.UseFrom()
 	var todo []replayFile
 	for i, f := range files {
 		if limit > 0 && i >= limit {
 			break
+		}
+		if f.mod.Before(from) {
+			break // newest first: the rest was saved before the first start
 		}
 		if e.st.Seen(f.path, f.sig) {
 			continue
@@ -756,15 +766,6 @@ func (e *Engine) importReplay(f replayFile, env Env) (bool, error) {
 			why = "played with " + osu.ModString(rep.Mods&skipMods) + ": the aim isn't yours"
 		}
 		e.skip(f, e.replayTitle(f, rep.BeatmapMD5), why, false)
-		return false, nil
-	}
-	player := e.st.State().Settings.PlayerName
-	if player == "" && env.Game != nil {
-		player = env.Game.Username
-	}
-	if player != "" && !strings.EqualFold(strings.TrimSpace(rep.Player), strings.TrimSpace(player)) {
-		e.st.MarkSeen(f.path, f.sig)
-		e.skip(f, e.replayTitle(f, rep.BeatmapMD5), fmt.Sprintf("played by %q, not by %q: I only use replays under your name (change it in Settings → Player name to analyse)", rep.Player, player), false)
 		return false, nil
 	}
 	if rep.ReplayMD5 != "" && e.st.HasReplay(rep.ReplayMD5) {

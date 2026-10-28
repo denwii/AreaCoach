@@ -575,11 +575,17 @@ func FitAdapt(pts []CalibPoint, o AdaptOpts, trail bool) AdaptFit {
 		case final && out.Arc.Strong && curA.Valid():
 			// sideways, the area goes toward where straight movements come
 			// out straight, as far as the hand lands where it should there
-			ux = arcPlace(&out.Arc, curA, ux, bx, w)
+			// along the area's width (the tablet's x axis unless the area
+			// is rotated)
+			c, sn := areaAxis(curA)
+			land := ux*c + uy*sn
+			nu := arcPlace(&out.Arc, curA, land, math.Abs(c)*bx+math.Abs(sn)*by, w)
 			if an.Valid() {
-				ux = clamp(ux, an.X-arcTotalMax, an.X+arcTotalMax)
+				at := an.X*c + an.Y*sn
+				nu = clamp(nu, at-arcTotalMax, at+arcTotalMax)
 			}
-			out.Arc.Shift = round(ux-curA.X, 2)
+			ux, uy = ux+(nu-land)*c, uy+(nu-land)*sn
+			out.Arc.Shift = round(nu-(curA.X*c+curA.Y*sn), 2)
 		}
 		if final && !o.FixPos && out.Prec.N >= 8 && out.Prec.Sig2 > 0 {
 			// toward where the hand is steadier. The scatter's share of aim
@@ -714,10 +720,13 @@ func AdaptRange(o AdaptOpts) (lo, hi float64) {
 	}
 	hi = 160
 	if o.TabletW > 0 && o.TabletH > 0 {
-		hi = o.TabletW
+		// along the tablet's x and y, whatever the area's rotation
+		// with free proportions, the flattest shape allowed (see AdaptShape)
+		hold := ratio * 0.7
 		if o.Locked {
-			hi = math.Min(o.TabletW, o.TabletH/ratio)
+			hold = ratio
 		}
+		hi = MaxWidth(o.TabletW, o.TabletH, hold, o.Anchor.Rot)
 	}
 	lo = math.Max(30, hi*0.25)
 	if o.MinW > 0 {
@@ -736,7 +745,11 @@ func AdaptStart(o AdaptOpts) otd.Rect {
 	_, hi := AdaptRange(o)
 	r := otd.Rect{W: hi, H: hi * o.Ratio, X: o.Anchor.X, Y: o.Anchor.Y, Rot: o.Anchor.Rot}
 	if !o.Locked && o.TabletH > 0 {
-		r.H = o.TabletH
+		// free proportions: the tablet's own shape (lying flat, however the
+		// area is turned), as large as fits
+		k := math.Min(o.TabletW, o.TabletH) / math.Max(o.TabletW, o.TabletH)
+		r.W = math.Min(hi, MaxWidth(o.TabletW, o.TabletH, k, r.Rot))
+		r.H = r.W * k
 	}
 	return AdaptShape(r, o)
 }
@@ -754,8 +767,12 @@ func AdaptShape(r otd.Rect, o AdaptOpts) otd.Rect {
 		r.H = r.W * ratio
 	} else {
 		r.H = r.W * clamp(r.H/r.W, ratio*0.7, ratio*1.45)
-		if o.TabletH > 0 && r.H > o.TabletH {
-			r.H = o.TabletH
+		if o.TabletH > 0 {
+			// too tall for the tablet: lower, down to the flattest shape
+			// allowed (then smaller, below)
+			if mh := math.Max(maxHeight(o.TabletW, o.TabletH, r.W, r.Rot), r.W*ratio*0.7); r.H > mh {
+				r.H = mh
+			}
 		}
 	}
 	r = fitIn(r, o.TabletW, o.TabletH)

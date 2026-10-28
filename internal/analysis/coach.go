@@ -26,7 +26,10 @@ func numAbs(x float64, d int) string { return num(math.Abs(x), d) }
 
 func pct(x float64, d int) string { return num(100*x, d) + "%" }
 
-func moveText(dx, dy float64) string {
+// moveText says how far an area moved (tablet mm), as seen on the screen
+// with an area rotated by rot degrees.
+func moveText(dx, dy, rot float64) string {
+	dx, dy = ScreenVec(dx, dy, rot)
 	ax, ay := math.Abs(dx), math.Abs(dy)
 	h, v := "right", "down"
 	if dx < 0 {
@@ -81,7 +84,7 @@ func buildHistory(epochs []EpochInfo) []HistItem {
 		a := e.Setup.Area
 		var bits []string
 		if math.Hypot(a.X-p.X, a.Y-p.Y) >= 0.05 {
-			bits = append(bits, "moved "+moveText(a.X-p.X, a.Y-p.Y))
+			bits = append(bits, "moved "+moveText(a.X-p.X, a.Y-p.Y, a.Rot))
 		}
 		if math.Abs(a.W-p.W) >= 0.05 || math.Abs(a.H-p.H) >= 0.05 {
 			bits = append(bits, fmt.Sprintf("from %s × %s to %s × %s mm", num(p.W, 1), num(p.H, 1), num(a.W, 1), num(a.H, 1)))
@@ -174,7 +177,7 @@ func coach(in Input, cur *EpochInfo, epochAim int, rep *Report, cons Consistency
 	case !rec.Centered:
 		sh := a.Shifted.Rect
 		c.Phase, c.PhaseIndex = phaseKeys[PhaseSet], PhaseSet
-		c.Title = "Move the area " + moveText(sh.X-area.X, sh.Y-area.Y)
+		c.Title = "Move the area " + moveText(sh.X-area.X, sh.Y-area.Y, area.Rot)
 		c.Message = "The size is fine, but your hand works in a slightly different spot of the tablet. Moving the area there puts the circles under the pen without having to correct."
 		c.Next = &sh
 		c.Change = &Change{DX: round(sh.X-area.X, 2), DY: round(sh.Y-area.Y, 2), Kind: "position"}

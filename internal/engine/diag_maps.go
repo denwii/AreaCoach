@@ -885,7 +885,7 @@ func (e *Engine) adaptNextMap(ls *adaptState, c *store.CalibSession, run *analys
 	case run.Blocked != "":
 		note = blockedWords(run.Blocked, run.Limit, run.Fit.FreeW)
 	}
-	if pw := placeTryWords(run.PlaceTry); pw != "" && !last.Held {
+	if pw := placeTryWords(run.PlaceTry, run.Cur.Rot); pw != "" && !last.Held {
 		if note != "" {
 			note += "; and I move it " + pw
 		} else {
@@ -904,7 +904,7 @@ func (e *Engine) adaptNextMap(ls *adaptState, c *store.CalibSession, run *analys
 			arc += " (" + a.Note + ")"
 		}
 	}
-	if sw := steadyWords(f.Steady); sw != "" {
+	if sw := steadyWords(f.Steady, run.Cur.Rot); sw != "" {
 		arc += "; steadiness by position: " + sw
 	}
 	log.Printf("diagnosis: end of %q with %.1f×%.1f: %d clicks, %d aim misses (expected %.1f), jumps %+.1f%%, clicks %+.2f / %+.2f mm, lines curved %.1f%%%s; expected misses %.1f per 1000 with %.1f mm; perfection %.1f%% (certainty %.0f%%, clean %.0f%%, uncertainty %.1f%%); next area %.1f×%.1f (%.1f; %.1f)%s",
@@ -913,7 +913,8 @@ func (e *Engine) adaptNextMap(ls *adaptState, c *store.CalibSession, run *analys
 }
 
 // placeTryWords says how far off the best place the next map is played.
-func placeTryWords(d [2]float64) string {
+func placeTryWords(d [2]float64, rot float64) string {
+	d[0], d[1] = analysis.ScreenVec(d[0], d[1], rot)
 	side := ""
 	v := 0.0
 	switch {
@@ -933,7 +934,13 @@ func placeTryWords(d [2]float64) string {
 
 // steadyWords says how the steadiness changes with the place, and what the
 // area did for it.
-func steadyWords(s analysis.AdaptSteady) string {
+func steadyWords(s analysis.AdaptSteady, rot float64) string {
+	// as seen on the screen
+	s.GX, s.GY = analysis.ScreenVec(s.GX, s.GY, rot)
+	s.ShiftX, s.ShiftY = analysis.ScreenVec(s.ShiftX, s.ShiftY, rot)
+	t := rot * math.Pi / 180
+	c, sn := math.Abs(math.Cos(t)), math.Abs(math.Sin(t))
+	s.GXSE, s.GYSE = math.Hypot(c*s.GXSE, sn*s.GYSE), math.Hypot(sn*s.GXSE, c*s.GYSE)
 	if s.N < 8 {
 		return ""
 	}
@@ -1085,9 +1092,26 @@ func (e *Engine) adaptManualChange(c *store.CalibSession) bool {
 		if ours {
 			continue
 		}
+		if staleArea(p.Area, c) && c.Cur.Valid() {
+			// an area the diagnosis already had (or the one from before it),
+			// saved again by the OpenTabletDriver window that still shows it:
+			// the area of the diagnosis goes back, in the file too
+			ls.mu.Lock()
+			err := e.adaptSet(ls, c.Cur)
+			if err == nil {
+				e.adaptKeep(ls, c.Cur)
+			}
+			ls.mu.Unlock()
+			if err == nil {
+				log.Printf("diagnosis: the OpenTabletDriver window saved an old area (%.1f × %.1f): saved the diagnosis one again", p.Area.W, p.Area.H)
+				e.adaptEvent(analysis.AdaptDecision{At: time.Now(), Kind: "otd", Note: fmt.Sprintf("the OpenTabletDriver window saved an old area (%s × %s mm): the diagnosis one is saved again; the filter you set stays", mmTxt(p.Area.W), mmTxt(p.Area.H))})
+				e.emit("calib")
+				return false
+			}
+		}
 		e.st.Update(func(s *store.State) {
 			s.Calib.Active = false
-			s.Calib.PauseNote = "Another area was saved in the OpenTabletDriver file, usually with Save from its window, which still shows the old numbers. I paused: press Resume to carry on with the area found."
+			s.Calib.PauseNote = "Another area was saved in the OpenTabletDriver file. I paused: press Resume to carry on with the area found."
 		})
 		_ = e.st.Save()
 		e.emit("calib")

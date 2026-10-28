@@ -79,3 +79,39 @@ func TestProfiles(t *testing.T) {
 		t.Fatalf("spans after switching back: %d %d", st.PlayProfile(later), st.PlayProfile(nw))
 	}
 }
+
+// Only the replays saved since the first start are kept.
+func TestDropPlaysBefore(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := s.UseFrom()
+	if from.IsZero() || time.Since(from) > time.Minute {
+		t.Fatalf("first start %v, want now", from)
+	}
+	hits := []analysis.Hit{{}}
+	_ = s.AddPlay(&PlayMeta{ReplayMD5: "old", FileTime: from.Add(-48 * time.Hour)}, hits)
+	_ = s.AddPlay(&PlayMeta{ReplayMD5: "older", Time: from.Add(-72 * time.Hour)}, hits)
+	_ = s.AddPlay(&PlayMeta{ReplayMD5: "new", FileTime: from.Add(time.Minute)}, hits)
+	if n := s.DropPlaysBefore(from); n != 2 {
+		t.Fatalf("dropped %d, want 2", n)
+	}
+	ps := s.Plays()
+	if len(ps) != 1 || ps[0].ReplayMD5 != "new" || s.HasReplay("old") {
+		t.Fatalf("left %+v", ps)
+	}
+	if _, err := s.Hits(ps[0].ID); err != nil {
+		t.Fatalf("hits of the play kept: %v", err)
+	}
+	// the first start is kept across restarts
+	_ = s.Save()
+	s2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s2.UseFrom().Equal(from) {
+		t.Fatalf("first start %v after a restart, want %v", s2.UseFrom(), from)
+	}
+}

@@ -359,6 +359,9 @@ func Open(dir string) (*Store, error) {
 	if s.state.Seen == nil {
 		s.state.Seen = map[string]FileSig{}
 	}
+	if s.state.FirstRun.IsZero() {
+		s.state.FirstRun = time.Now()
+	}
 	if s.state.Settings.MaxImport == 0 {
 		s.state.Settings.MaxImport = 1500
 	}
@@ -848,6 +851,44 @@ func (s *Store) RemoveEpoch(id int) error {
 }
 
 // ResetPlays forgets every imported play (used for a full re-import).
+// UseFrom is when replays start to count: the first start of the program.
+// Replays saved before it are not imported.
+func (s *Store) UseFrom() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.FirstRun
+}
+
+// DropPlaysBefore removes the plays whose replay was saved before t, with
+// their hits, and returns how many there were.
+func (s *Store) DropPlaysBefore(t time.Time) int {
+	s.mu.Lock()
+	var keep []*PlayMeta
+	var gone []int
+	for _, p := range s.plays {
+		when := p.FileTime
+		if when.IsZero() {
+			when = p.Time
+		}
+		if !when.Before(t) {
+			keep = append(keep, p)
+			continue
+		}
+		gone = append(gone, p.ID)
+		delete(s.byID, p.ID)
+		if p.ReplayMD5 != "" && s.byMD5[p.ReplayMD5] == p {
+			delete(s.byMD5, p.ReplayMD5)
+		}
+		delete(s.hits, p.ID)
+	}
+	s.plays = keep
+	s.mu.Unlock()
+	for _, id := range gone {
+		_ = os.Remove(filepath.Join(s.dir, "hits", fmt.Sprintf("%d.bin", id)))
+	}
+	return len(gone)
+}
+
 func (s *Store) ResetPlays() {
 	s.mu.Lock()
 	s.plays = nil

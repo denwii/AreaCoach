@@ -113,10 +113,9 @@ func adaptMeasure(in []winNote, m Mapper, cp *CalibPoint) {
 	}
 	dx, dy := m.Vec(mx*R, my*R)
 	cp.DX, cp.DY = round(dx, 3), round(dy, 3)
-	kx := math.Hypot(m.A[0][0], m.A[1][0]) * R
-	ky := math.Hypot(m.A[0][1], m.A[1][1]) * R
-	cp.SDX = round(sex*kx, 4)
-	cp.SDY = round(sey*ky, 4)
+	// how sure, on the tablet's x and y (the area may be rotated)
+	cp.SDX = round(R*math.Hypot(m.A[0][0]*sex, m.A[0][1]*sey), 4)
+	cp.SDY = round(R*math.Hypot(m.A[1][0]*sex, m.A[1][1]*sey), 4)
 	_ = ci
 }
 
