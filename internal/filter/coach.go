@@ -137,9 +137,8 @@ func (s Shape) Params(outer float64) Params {
 	return Params{Outer: outer, Inner: outer * s.Inner, Coef: s.Coef, Knee: s.Knee, Leak: s.Leak}
 }
 
-// FamilyShapes are the kinds tried: all with a still part (an aim assist
-// that holds the cursor on the circle while the pen trembles), more or less
-// of it, smoothing more or less.
+// FamilyShapes are the kinds tried: all with a still part (a deadzone that
+// absorbs small pen jitter), more or less of it, smoothing more or less.
 var FamilyShapes = func() []Shape {
 	var out []Shape
 	for _, in := range []float64{0.25, 0.4, 0.55} {

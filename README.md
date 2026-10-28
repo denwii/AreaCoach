@@ -5,13 +5,13 @@ You play your own maps; after each one it reads the replay, measures how you aim
 sets a better area in OpenTabletDriver for the next map. Map after map the changes get
 smaller until the area settles on the one you are most precise and steady with.
 
-It can also guide you to the right settings for AbstractQbit's **Radial Follow**
-smoothing filter.
+It can also help you tune AbstractQbit's **Radial Follow** smoothing filter for
+OpenTabletDriver.
 
 ![The diagnosis while it runs](docs/screenshots/diagnosis.png)
 
 - [What it does](#what-it-does)
-- [Is it safe?](#is-it-safe)
+- [What it reads and changes](#what-it-reads-and-changes)
 - [Requirements](#requirements)
 - [Install](#install)
 - [First start](#first-start)
@@ -46,21 +46,19 @@ smoothing filter.
 
 The interface is a local web page shown in its own window.
 
-## Is it safe?
+## What it reads and changes
 
-Area Coach **never touches osu!**: no memory reading or writing, no injection, no
-reading of the cursor, keys or window, and nothing happens while you are playing a map.
-It only:
+Area Coach works only with files and with OpenTabletDriver:
 
-- **reads files** osu! has already written: replays (`Data\r` and `Replays`),
+- it **reads files** osu! has already written: replays (`Data\r` and `Replays`),
   `osu!.db`, the `.osu` map files and the osu! config file;
-- **changes the area in OpenTabletDriver** (through OpenTabletDriver's own local
-  connection and its `settings.json`), and only between maps, as you would by hand.
+- it **changes the tablet area in OpenTabletDriver** (through OpenTabletDriver's own
+  local connection and its `settings.json`), only between maps, as you would by hand.
   The first time it saves a copy of your original file as
-  `settings.json.areacoach-backup`. It never changes your filters: it only reads them.
+  `settings.json.areacoach-backup`. Your filter settings are only read, never changed.
 
-No guarantee can be given about how any anti-cheat sees any program. If you want to be
-completely on the safe side, **play offline or unranked maps during the diagnosis**.
+It doesn't interact with the osu! game itself, and nothing changes while you are playing
+a map.
 
 ## Requirements
 
@@ -205,22 +203,22 @@ you can round to a size you like.
 
 ## The guided filter (Radial Follow)
 
-Radial Follow is a smoothing filter by AbstractQbit. With an **inner radius** the cursor
-stays still on the circle while the pen trembles; the **outer radius** decides how far
-the cursor can trail the pen, which is the delay. It doesn't know where the circles are,
-so it doesn't aim for you: it removes the tremor and keeps the cursor still and straight.
+Radial Follow is a popular smoothing filter for OpenTabletDriver, by AbstractQbit. It
+reduces pen jitter: the **inner radius** absorbs small movements of the pen, the **outer
+radius** sets how far the cursor can trail the pen, which is the delay. More smoothing
+means less jitter and more delay; the guided filter looks for the balance that works
+best for you.
 
 ![The guided filter](docs/screenshots/filter.png)
 
 1. Install **AbstractQbit's Radial Follow Smoothing** from OpenTabletDriver → Plugins →
    Plugin Manager. In Filters, use the **Tablet coordinates** version (in millimetres,
    it stays right whatever the area).
-2. During the diagnosis, in **The filter (aim assist)** section, choose how much delay is
-   fine for you:
+2. During the diagnosis, in **The filter (Radial Follow)** section, choose how much delay
+   is fine for you:
    - **Start with lowest latency**: only values with at most 3 ms of average delay; the
      cursor follows the pen almost at once.
-   - **Start with aim assist**: up to 15 ms, if it helps; the cursor is stiller on the
-     circle and a bit softer.
+   - **Start with more smoothing**: up to 15 ms, if it helps; less jitter, a softer feel.
 3. Under **For the next map** you get the five values (Outer Radius, Inner Radius,
    Initial Smoothing Coefficient, Soft Knee Scale, Smoothing Leak Coefficient), each with
    a copy button. In OpenTabletDriver → Filters → Radial Follow (Tablet coordinates): tick
@@ -237,10 +235,10 @@ straight away and the filter you set stays.
 
 | Control | What it does |
 | --- | --- |
-| **Latency: As low as possible / Some is fine (aim assist)** | Switches between the two modes above at any time. |
+| **Latency: As low as possible / Some is fine (more smoothing)** | Switches between the two modes above at any time. |
 | **Try different values / Keep the best** | Like the area, every map tries values a little stronger or lighter than the best; *Keep the best* stops the tries. |
 | **Stop the guided filter** | Stops guiding. The filter in OpenTabletDriver stays as you set it. |
-| **Filter perfection** | Certainty (where the best is, and that it really beats no filter) times clean aim (aim misses, cursor still on the circle, clicks on time). |
+| **Filter perfection** | Certainty (where the best is, and that it really beats no filter) times clean aim (aim misses, little jitter, clicks on time). |
 
 The table under it shows, map by map, the filter used, aim misses against the usual,
 **Shake** (how much the cursor moves on the circle right before the click), **Last
@@ -259,9 +257,8 @@ delay) and **Curves**.
 - **Progress**: average error and aim misses session by session, with the area used in
   each period, warm-up and how you got used to the current area.
 - **Plays**: every analysed replay; click one to see where you clicked on every note. At
-  the bottom, **Replays found but not used** lists the replays it skipped and why (failed
-  with Relax/Autopilot/Auto, another player's name, map missing from Songs, not
-  osu!standard…),
+  the bottom, **Replays found but not used** lists the replays it skipped and why (mods
+  like Relax or Auto, another player's name, map missing from Songs, not osu!standard…),
   and **Where I look for them** shows the folders it watches and the time of the last
   replay in each.
 
@@ -327,19 +324,7 @@ Run the tests with `go test ./...` (the closed-loop simulations in `internal/sim
 few minutes).
 
 **Releases (optional):** pushing a tag like `v2.3.0` makes the *Release* workflow build
-`AreaCoach.exe` and publish it in a GitHub release, with its checksum.
-
-### Development tools
-
-These let you run the diagnosis without the game or a tablet:
-
-- `cmd/devtools/fakeotd` stands in for the OpenTabletDriver daemon.
-- `cmd/devtools/fakelive` plays maps as a simulated player, with the area (and Radial
-  Follow) the fake driver has, and writes the replays into an osu! folder. With `-coach`
-  it sets the filter values the program asks for before each map.
-
-`AREACOACH_PORT` (the UI token becomes `dev`), `AREACOACH_DATA` and `OSU_DIR` set the
-port, the data folder and the osu! folder.
+`AreaCoach.exe` and attach it to the GitHub release, with its checksum.
 
 ### Layout
 
@@ -352,7 +337,7 @@ port, the data folder and the osu! folder.
 | `internal/filter` | Radial Follow simulation, parameter search and cursor measures |
 | `internal/platform` | OS-specific code |
 | `internal/server`, `web` | Local HTTP API and the interface |
-| `internal/sim` | Simulated players and closed-loop tests |
+| `internal/sim` | Closed-loop tests of the diagnosis on simulated data |
 | `internal/store` | Saved state, plays and history |
 
 ## License and credits

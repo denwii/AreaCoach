@@ -34,8 +34,8 @@ import (
 // also a key of the filter test).
 func filterOn(key string) bool { return key != "" && key != "off" && key != "mixed" }
 
-// The default shape and strength, before the simulation can say: an aim
-// assist with a still part, at a strength most hands do well with.
+// The default shape and strength, before the simulation can say: some
+// deadzone, at a strength most hands do well with.
 var (
 	coachDefShape = filter.Shape{Inner: 0.4, Coef: 0.5, Knee: 1, Leak: 0}
 	coachDefOuter = 0.8

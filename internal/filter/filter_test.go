@@ -99,13 +99,13 @@ func TestOptimizeNoHelp(t *testing.T) {
 		t.Logf("%s: %+v gain %.1f [%.1f, %.1f], delay %.2f ms sure=%v", o.Name, o.Eval.Params, o.Eval.Gain, o.Eval.GainLo, o.Eval.GainHi, o.Eval.Delay, o.Sure)
 	}
 	t.Logf("best=%s default gain %.1f", res.Best, res.Default.Gain)
-	// with little lag nothing helps; with a lot (aim assist), the cursor
-	// stays behind the pen enough not to go past the circle at all
-	if res.Best != "none" && res.Best != "assist" {
+	// with little lag nothing helps; only the smoothest level, with a lot of
+	// lag, may
+	if res.Best != "none" && res.Best != "smooth" {
 		t.Errorf("no low-latency filter should be recommended here, got %s", res.Best)
 	}
 	for _, o := range res.Options {
-		if o.Key != "assist" && o.Sure && o.Eval.Delay < 4 {
+		if o.Key != "smooth" && o.Sure && o.Eval.Delay < 4 {
 			t.Errorf("%s should not help here: %+v", o.Name, o.Eval)
 		}
 	}

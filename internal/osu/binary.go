@@ -153,33 +153,4 @@ func TimeToTicks(t time.Time) int64 {
 	return unixEpochTicks + t.UnixNano()/100
 }
 
-// writer helpers used to synthesize files (tests and the calibration tools).
-type writer struct{ b []byte }
-
-func (w *writer) u8(v byte)    { w.b = append(w.b, v) }
-func (w *writer) i16(v int16)  { w.b = binary.LittleEndian.AppendUint16(w.b, uint16(v)) }
-func (w *writer) i32(v int32)  { w.b = binary.LittleEndian.AppendUint32(w.b, uint32(v)) }
-func (w *writer) i64(v int64)  { w.b = binary.LittleEndian.AppendUint64(w.b, uint64(v)) }
-func (w *writer) raw(p []byte) { w.b = append(w.b, p...) }
-func (w *writer) str(s string) {
-	if s == "" {
-		w.u8(0)
-		return
-	}
-	w.u8(0x0b)
-	n := uint(len(s))
-	for {
-		c := byte(n & 0x7f)
-		n >>= 7
-		if n != 0 {
-			c |= 0x80
-		}
-		w.u8(c)
-		if n == 0 {
-			break
-		}
-	}
-	w.raw([]byte(s))
-}
-
 var _ = io.EOF

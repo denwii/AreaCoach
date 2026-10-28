@@ -8,7 +8,7 @@
   maps, a slightly different place, to find where you are most precise and steadiest.
 - Guided Radial Follow filter: the program tells you the values for the next map, you set
   them in OpenTabletDriver, and after every replay it gives you new ones. Choice between
-  the lowest latency and a stronger aim assist.
+  the lowest latency and more smoothing.
 - Area and filter "perfection" percentages.
 - Replay import: failed and multiplayer plays are picked up when saved with F2; the Plays
   page lists the replays found but not used, with the reason, and the folders it watches.

@@ -339,9 +339,9 @@ var (
 
 type cand struct{ o, i, c, k, l int }
 
-// assistGrid are settings of the kind used as aim assist: a deadzone (inner
-// radius) that is a good part of the outer one, more or less smoothing.
-func assistGrid() []cand {
+// smoothGrid are settings with a deadzone (inner radius) that is a good part
+// of the outer one, more or less smoothing.
+func smoothGrid() []cand {
 	var out []cand
 	for _, o := range []int{3, 5, 7, 8, 9, 10} {
 		for _, i := range []int{3, 4, 5} {
@@ -426,7 +426,7 @@ func Optimize(ds *Dataset, current *Params, progress func(float64)) Result {
 	budgets := []struct {
 		key, name string
 		b         float64
-	}{{"min", "Lowest latency", 1}, {"bal", "Balanced", 3}, {"stable", "Steadier", 6}, {"assist", "Aim assist", 12}}
+	}{{"min", "Lowest latency", 1}, {"bal", "Balanced", 3}, {"stable", "Steadier", 6}, {"smooth", "Smoothest", 12}}
 	score := func(e Eval, b float64) float64 {
 		return e.Gain - 50*math.Max(0, e.Delay-b) - 0.05*e.Delay
 	}
@@ -481,7 +481,7 @@ func Optimize(ds *Dataset, current *Params, progress func(float64)) Result {
 		opt := Option{Key: bd.key, Name: bd.name, Budget: bd.b, Eval: e}
 		opt.Sure = e.GainLo > 0 && e.Gain >= 0.3
 		res.Options = append(res.Options, opt)
-		if best.o > 0 && eval(best).Delay >= 0.4*bd.b && (bd.key != "assist" || gridInner[best.i] >= 0.3) {
+		if best.o > 0 && eval(best).Delay >= 0.4*bd.b && (bd.key != "smooth" || gridInner[best.i] >= 0.3) {
 			res.Tries = append(res.Tries, opt)
 			continue
 		}
@@ -489,7 +489,7 @@ func Optimize(ds *Dataset, current *Params, progress func(float64)) Result {
 		// simulation says it does not help (it cannot know how the hand
 		// changes with the filter on): among the settings that do filter
 		// with about this much lag, the one with most clicks in the circle
-		for _, c := range assistGrid() {
+		for _, c := range smoothGrid() {
 			eval(c)
 		}
 		var on cand
@@ -498,8 +498,8 @@ func Optimize(ds *Dataset, current *Params, progress func(float64)) Result {
 			if c.o == 0 || ev.Delay > bd.b || ev.Delay < 0.4*bd.b {
 				continue
 			}
-			if bd.key == "assist" && gridInner[c.i] < 0.3 {
-				// aim assist: a deadzone where the cursor stays still
+			if bd.key == "smooth" && gridInner[c.i] < 0.3 {
+				// the smoothest level: a deadzone where the cursor stays still
 				continue
 			}
 			if sc := ev.Gain; sc > onS || (sc == onS && candLess(c, on)) {

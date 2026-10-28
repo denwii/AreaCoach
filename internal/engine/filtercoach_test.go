@@ -43,7 +43,7 @@ func testMap(p *filter.Params, miss int, exp float64, trem float64) store.AdaptM
 }
 
 func TestCoachStart(t *testing.T) {
-	// nothing known: the default aim assist
+	// nothing known: the default values
 	d := coachDecide(coachIn{})
 	if !d.AskOn || math.Abs(d.Best.Outer-coachDefOuter) > 0.3 || d.Best.Inner <= 0 {
 		t.Fatalf("start without a simulation: %+v", d)

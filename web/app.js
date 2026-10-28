@@ -642,11 +642,11 @@
         : `<p class="bigline" style="margin-top:10px">With your movements no Radial Follow setting surely puts more clicks in the circle: I suggest not using it, or keeping it at the minimal values below.</p>${rfTable({ outer: 0, inner: 0, coef: 0.95, knee: 1, leak: 0 }, cur)}`;
       const d = res.diagnosis || {};
       const why = [];
-      if (d.overshoot > 0.15) why.push(`In ${pct(d.overshoot, 0)} of the clicks the pen had gone past the circle and was coming back: light smoothing delays the way back, strong smoothing (aim assist) keeps the cursor behind the pen so it doesn't overshoot at all.`);
+      if (d.overshoot > 0.15) why.push(`In ${pct(d.overshoot, 0)} of the clicks the pen had gone past the circle and was coming back: smoothing makes the cursor follow those quick corrections more gently.`);
       if (d.tremor > 0) why.push(`Right before the click the pen moves on average ${nf(d.tremor, 2)} mm per report: that's the tremor the filter can absorb.`);
       if (d.moving > 0.2) why.push(`In ${pct(d.moving, 0)} of the clicks the pen was still moving fast: the more the filter holds the cursor back, the shorter those clicks land.`);
       body = `${head}
-        <section class="section">${sectionHead("The levels", "Picked on half of your replays and checked on the other half, so the gain isn't inflated by chance. Delay: how much later the cursor enters the circle than the pen. Aim assist: the strongest, with the most delay; the cursor stays behind the pen and doesn't go past the circle. To know which works best for you, try them in game from the Diagnosis page.")}
+        <section class="section">${sectionHead("The levels", "Picked on half of your replays and checked on the other half, so the gain isn't inflated by chance. Delay: how much later the cursor enters the circle than the pen. Smoothest: the strongest smoothing, with the most delay. To know which works best for you, try them in game from the Diagnosis page.")}
           <div class="grid-2">${opts.map((o) => `<div class="panel opt ${o.key === res.best ? "best" : ""}"><h3>${esc(o.name)}${o.key === res.best ? ' <span class="tag cur">suggested</span>' : ""}</h3><p class="sub">at most ${nf(o.budget, 0)} ms of delay</p>
             <dl class="kv"><dt>Effect</dt><dd>${esc(gainTxt(o.eval))}</dd><dt>Range</dt><dd class="readout">${signed(o.eval.gainLo, 1)} … ${signed(o.eval.gainHi, 1)}</dd><dt>Average delay</dt><dd class="readout">${nf(o.eval.delay, 1)} ms</dd><dt>Values</dt><dd class="readout xs">${RF_FIELDS.map(([k]) => nfTrim(o.eval.params[k], 2)).join(" · ")}</dd></dl>
             ${o.sure ? "" : '<p class="xs muted" style="margin-top:8px">Gain not sure: it could be zero.</p>'}</div>`).join("")}</div>
@@ -660,7 +660,7 @@
     const real = (f.real || []).filter((g) => g.plays > 0);
     view.innerHTML = `<div class="page">
       <div class="row" style="justify-content:space-between;align-items:flex-start"><div><h1 class="h-page">Radial Follow filter</h1>
-      <p class="lede">I replay your real movements, taken from every replay with every area, through the AbstractQbit's Radial Follow (Tablet coordinates) filter, and look for the values that put the most clicks inside the circles with the least delay. It's a smoothing filter: it removes tremor and limits how far the cursor trails the pen. It doesn't pull the cursor towards the circles, but with a wide inner radius it works as an aim assist: the cursor stays a little behind the pen, so it doesn't go past the circle and doesn't shake while you click. For values tuned on how you actually play, use the guided filter on the Diagnosis page.</p></div>
+      <p class="lede">I replay your real movements, taken from every replay with every area, through the AbstractQbit's Radial Follow (Tablet coordinates) filter, and look for the values that put the most clicks inside the circles with the least delay. It's a smoothing filter: it reduces pen jitter, at the cost of a little delay. For values tuned on how you actually play, use the guided filter on the Diagnosis page.</p></div>
       ${f.running ? "" : `<button class="btn small" id="rfRun">${res ? "Recalculate" : "Calculate"}</button>`}</div>
       ${f.stale && !f.running ? `<div class="note-bar">${ICON.info}<span>There are new replays since the last calculation: press Recalculate to update.</span></div>` : ""}
       ${active}
@@ -1099,7 +1099,7 @@
       <li><b>Play normally</b>, without correcting yourself: the area adapts to you. Even if at first, with the whole tablet, you hit almost nothing: from how you move the pen I can tell how short you land.</li>
       <li><b>Every map has a slightly different area</b>: the best found so far, a bit bigger or smaller in turn. It isn't a mistake: that's how I find the width you're most precise and steady with. The differences shrink as the perfection percentage goes up.</li>
       <li><b>At the end of the map</b>, as soon as osu! saves the replay (you're on the results screen), I work out the area for the next map and put it in OpenTabletDriver, saved. It takes a few seconds: before starting the next map, check that the new area has arrived here.</li>
-      <li><b>I don't touch osu!.</b> While you play, AreaCoach doesn't read osu! and doesn't change anything in it. It only reads the replays osu! saves to disk, as in the normal analysis, and only changes the area in OpenTabletDriver between maps, as you would by hand. If you want to be on the safe side with ranked scores, play offline or unranked maps during the diagnosis.</li>
+      <li><b>What it uses.</b> Only the replays osu! saves to disk, as in the normal analysis. The area in OpenTabletDriver is changed only between maps, as you would by hand.</li>
       <li><b>The OpenTabletDriver window</b>, if it's open, doesn't update its numbers by itself: use the "Refresh it" button here, and don't press Apply or Save there with the old numbers.</li>
     </ul>`;
   const sidePair = (dx, dy) => {
@@ -1255,16 +1255,16 @@
     const missingPlugin = !a.filterHas
       ? `<div class="note-bar" style="margin-top:12px">${ICON.info}<span>I can't find the plugin in OpenTabletDriver. Install <b>AbstractQbit's Radial Follow Smoothing</b> from Plugins → Plugin Manager, then in Filters add <b>AbstractQbit's Radial Follow Smoothing (Tablet coordinates)</b>.</span></div>`
       : "";
-    const head = "The filter (aim assist)";
-    const intro = "AbstractQbit's Radial Follow. With an inner radius the cursor stays still on the circle while the pen shakes; the outer radius decides how far it can trail behind, that is the delay. I don't change the filter myself: I tell you the values, you put them in OpenTabletDriver, and after every replay I give you new ones. As with the area, every map tries values a little stronger or lighter than the best, and all of them help to find it. The filter doesn't know where the circles are, so it doesn't aim for you: it removes the tremor and keeps the cursor still and straight, the aim stays yours.";
+    const head = "The filter (Radial Follow)";
+    const intro = "AbstractQbit's Radial Follow, a smoothing filter for OpenTabletDriver: it reduces pen jitter; the stronger it is, the more delay it adds. I don't change the filter myself: I tell you the values, you put them in OpenTabletDriver, and after every replay I give you new ones. As with the area, every map tries values a little stronger or lighter than the best, and all of them help to find it.";
     if (!fc || !fc.active) {
       const last = fc ? `<p class="small" style="margin-top:8px">The last best found: <b class="readout">${fc.bestOn ? esc(rfShort(fc.best)) : "no filter"}</b>${fc.nOn ? ` · perfection ${nf(fc.pct || 0, 1)}%` : ""}.</p>` : "";
       const sim = a.hasFamily ? "The simulation on your movements is ready: I start from there." : a.filterBusy ? "I'm simulating the filter on your movements: if you start now I begin from average values and correct them with the maps." : `I start from average values; after about ${nf(a.filterNeed || 600, 0)} clicks without a filter with an area close to the one found, I also simulate them on your movements.`;
       const body = `<h3>${fc ? "Guided filter stopped" : "Guided filter"}</h3>
         <p class="sub">Press Start and I tell you the values for the next map. From the replay I measure how many circles you miss against how many you usually miss on those notes without a filter, how much the cursor shakes on the circle before the click, how many clicks come at the last moment and how straight the lines are. Now and then I ask for a map without a filter, to compare. ${sim}</p>
         ${last}
-        <p class="small" style="margin-top:10px">How much delay is fine? With <b>lowest latency</b> I only suggest values with at most 3 ms of average delay and, for the same misses, the fastest: the cursor follows the pen almost at once and shakes a little more. With <b>aim assist</b> I accept up to 15 ms if it helps the aim: the cursor is stiller on the circle, a bit softer. You can change it any time.</p>
-        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center"><button class="btn primary" data-fcstart="fc-start-low">${fc ? "Resume" : "Start"} with lowest latency</button><button class="btn" data-fcstart="fc-start">${fc ? "Resume" : "Start"} with aim assist</button><a class="small" href="#/filter">The full filter study</a></div>
+        <p class="small" style="margin-top:10px">How much delay is fine? With <b>lowest latency</b> I only suggest values with at most 3 ms of average delay and, for the same misses, the fastest: the cursor follows the pen almost at once and shakes a little more. With <b>more smoothing</b> I accept up to 15 ms if it helps: less jitter, a bit softer feel. You can change it any time.</p>
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center"><button class="btn primary" data-fcstart="fc-start-low">${fc ? "Resume" : "Start"} with lowest latency</button><button class="btn" data-fcstart="fc-start">${fc ? "Resume" : "Start"} with more smoothing</button><a class="small" href="#/filter">The full filter study</a></div>
         ${missingPlugin}`;
       return `<section class="section">${sectionHead(head, intro)}<div class="panel">${body}</div></section>`;
     }
@@ -1297,8 +1297,8 @@
       <div class="kv-line"><span>Cursor on the circle</span><b>${fc.bestOn && fc.nOn ? `shakes ${tremTxt(fc.trem || 0)}` : "–"}</b><span class="muted small">before the click, with the best${fc.nOff || fc.sim ? `; without a filter ${tremTxt(fc.tremOff || 0)}` : ""}. The lower, the stiller the cursor while you click.</span></div>
       ${fc.sim && fc.bestOn ? `<div class="kv-line"><span>Delay</span><b class="readout">${nf(fc.delay || 0, 1)} ms</b><span class="muted small">on average to reach the circle, simulated on your movements; ${nf(fc.lost || 0, 1)} clicks per 1000 would land outside because the cursor arrives late. I never suggest values with more than ${nf(fc.maxLag || 15, 0)} ms of delay.</span></div>` : ""}
       <div class="kv-line"><span>Maps measured</span><b class="readout">${fc.nOn} with a filter · ${fc.nOff} without</b><span class="muted small">${fc.sim ? (fc.simSrc === "replay" ? "together with the simulation on the movements of your replays without a filter" : "together with the simulation on the movements of the diagnosis maps without a filter") : "the simulation comes after a few maps without a filter"}</span></div>`;
-    const lagCtl = `<div class="row" style="margin-top:14px;align-items:center;gap:10px;flex-wrap:wrap"><span class="small">Latency</span><div class="seg" role="group" aria-label="Filter latency"><button data-fc="fc-lowlag" class="${fc.lowLag ? "on" : ""}" aria-pressed="${!!fc.lowLag}">As low as possible</button><button data-fc="fc-normal" class="${fc.lowLag ? "" : "on"}" aria-pressed="${!fc.lowLag}">Some is fine (aim assist)</button></div></div>
-      <p class="xs muted" style="margin-top:4px">${fc.lowLag ? `Only values with at most ${nf(fc.maxLag || 3, 0)} ms of average delay and, for the same misses, the fastest: the cursor follows the pen almost at once.` : `Up to ${nf(fc.maxLag || 15, 0)} ms of average delay, if it helps the aim: the cursor stays stiller on the circle, a bit softer.`} If you switch, the values for the next map change right away.</p>`;
+    const lagCtl = `<div class="row" style="margin-top:14px;align-items:center;gap:10px;flex-wrap:wrap"><span class="small">Latency</span><div class="seg" role="group" aria-label="Filter latency"><button data-fc="fc-lowlag" class="${fc.lowLag ? "on" : ""}" aria-pressed="${!!fc.lowLag}">As low as possible</button><button data-fc="fc-normal" class="${fc.lowLag ? "" : "on"}" aria-pressed="${!fc.lowLag}">Some is fine (more smoothing)</button></div></div>
+      <p class="xs muted" style="margin-top:4px">${fc.lowLag ? `Only values with at most ${nf(fc.maxLag || 3, 0)} ms of average delay and, for the same misses, the fastest: the cursor follows the pen almost at once.` : `Up to ${nf(fc.maxLag || 15, 0)} ms of average delay, if it helps: less jitter, a bit softer feel.`} If you switch, the values for the next map change right away.</p>`;
     const ctl = `${lagCtl}<div class="row" style="margin-top:14px;align-items:center;gap:10px;flex-wrap:wrap"><div class="seg" role="group" aria-label="Filter values"><button data-fc="fc-tries" class="${fc.hold ? "" : "on"}" aria-pressed="${!fc.hold}">Try different values</button><button data-fc="fc-hold" class="${fc.hold ? "on" : ""}" aria-pressed="${!!fc.hold}">Keep the best</button></div><button class="btn small ghost" id="fcStop">Stop the guided filter</button></div>`;
     // the maps, with the filter each was played with
     const ms = (a.maps || []).filter((m) => m.windows > 0).slice(-12).reverse();
@@ -1360,7 +1360,7 @@
     }[state.diagFrom];
     return `<div class="panel diag-start" style="margin-top:24px">
         <div class="diag-steps">
-          <div><span class="n">1</span><b>Press Start and play a map</b><p>Your own maps, as always. If you fail, press F2 on the game-over screen to save the replay (or use NoFail); in multiplayer press F2 on the results screen, because there osu! doesn't save it by itself. During the map I change nothing and I don't touch osu!.</p></div>
+          <div><span class="n">1</span><b>Press Start and play a map</b><p>Your own maps, as always. If you fail, press F2 on the game-over screen to save the replay (or use NoFail); in multiplayer press F2 on the results screen, because there osu! doesn't save it by itself. Nothing changes during the map.</p></div>
           <div><span class="n">2</span><b>At the end of the map I measure the replay</b><p>As soon as osu! saves it: whether you land long or short on jumps, how precise you are with that width, where the clicks land, whether the jumps come out turned. I work out the width with the fewest expected aim misses and the place where your aim comes out straightest.</p></div>
           <div><span class="n">3</span><b>You play the next map with the new area</b><p>I put it in OpenTabletDriver and save it. Map after map the changes shrink to fractions of a millimetre.</p></div>
         </div>
@@ -1579,7 +1579,7 @@
     const a = c.mode === "adapt" ? c.adapt : null;
     view.innerHTML = `<div class="page">
       <h1 class="h-page">Diagnosis</h1>
-      <p class="lede">You play your own maps, each with a single area from start to finish. At the end of the map I measure from the replay whether you land long or short on jumps, how precise you are, where the clicks land and whether your aim comes out turned, and I put the area for the next map in OpenTabletDriver. During the map I change nothing and I don't touch osu!. It goes on as long as you like.</p>
+      <p class="lede">You play your own maps, each with a single area from start to finish. At the end of the map I measure from the replay whether you land long or short on jumps, how precise you are, where the clicks land and whether your aim comes out turned, and I put the area for the next map in OpenTabletDriver. Nothing changes during the map. It goes on as long as you like.</p>
       ${a ? diagLive(c) : diagStart(c)}
       ${a ? diagFilter(a) : ""}
       ${a ? diagMissSection(a) : ""}
@@ -1663,7 +1663,7 @@
       "fc-hold": "Keeping the best filter: no tries",
       "fc-tries": "Every map tries a slightly different filter",
       "fc-lowlag": "Lowest latency: the values for the next map have changed",
-      "fc-normal": "Aim assist: the values for the next map have changed",
+      "fc-normal": "More smoothing: the values for the next map have changed",
     }[b.dataset.fc])));
     on("adRestore", () => {
       if (!a || !confirm(`Put back in OpenTabletDriver the area you had before the diagnosis (${rectTxt(a.base)}) and pause? What the diagnosis has learnt is kept.`)) return;
