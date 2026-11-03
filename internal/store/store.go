@@ -72,6 +72,7 @@ type Settings struct {
 	Theme           string                     `json:"theme"`
 	FilterRate      float64                    `json:"filterRate"` // tablet reports per second (0 = guess)
 	DiagHold        bool                       `json:"diagHold"`   // keep the area after a map with no aim miss (since 2.1 off unless chosen)
+	DiagTest        bool                       `json:"diagTest"`   // testing: every map tries an area a little different from the best (since 2.4 off unless chosen: always the best found)
 	// the widths the diagnosis may use (0: no limit)
 	DiagMinW float64 `json:"diagMinW,omitempty"`
 	DiagMaxW float64 `json:"diagMaxW,omitempty"`

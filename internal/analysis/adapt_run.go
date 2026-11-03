@@ -17,6 +17,10 @@ type AdaptRun struct {
 	Fit  AdaptFit
 	// a map with no aim miss leaves the area as it is
 	HoldClean bool
+	// testing off: every map is played with the best area found so far,
+	// nothing a little different on purpose (it still changes map by map, as
+	// the maps change what is best)
+	NoTry bool
 	// maps played a little wider or narrower than the best width so far
 	// (in turn, by how unsure it still is)
 	Dither int
@@ -153,6 +157,9 @@ func (r *AdaptRun) Next(clean bool) (otd.Rect, float64) {
 		return r.Cur, 0
 	}
 	t := r.Rest()
+	if r.NoTry {
+		return t, 0
+	}
 	if r.Opts.FixSize {
 		p := r.placeTry(t)
 		r.Dither++

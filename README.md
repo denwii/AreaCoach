@@ -31,10 +31,12 @@ OpenTabletDriver.
   straight the paths between circles are. Then it works out the width with the fewest
   expected aim misses and the place where your aim comes out straightest, and puts that
   area in OpenTabletDriver before you start the next map.
-- **Every map tries something slightly different.** The next map is played with the best
-  area found so far, a little bigger or smaller in turn and by varying amounts; every two
-  maps it is also moved a little to one side. That is how it learns which width and which place you are
-  steadiest with. The tries get smaller as it gets surer.
+- **Always the best area, or testing.** By default every map is played with the best area
+  found so far: the one with the fewest expected aim misses, worked out from your
+  consistency (how much your clicks scatter with each width), whether you land long or
+  short, and where on the tablet you're steadiest. Every map updates it. With **Testing**
+  on, every map tries an area a little bigger or smaller than the best and a little moved
+  to one side, to learn faster which width and place you're steadiest with.
 - **A "perfection" percentage** says how close the area found is to a perfect one: how
   sure the diagnosis is, times how clean your aim is with it.
 - **Guided filter.** For Radial Follow it tells you which values to set for the next map;
@@ -136,6 +138,7 @@ replays saved before the first start are not used. Open **Settings** and check:
 | **Area shape: Fixed** | You choose the height/width ratio (for example 0.75 is 4:3). Only size and position change. |
 | **Area shape: Free** | Width and height adapt on their own, but the shape stays close to the starting one. |
 | **Widths allowed (mm)** | Optional limits, for example `110 - 150`. A single number is a minimum. Empty = no limit. |
+| **Testing: On / Off** | Off (default): every map is played with the best area found so far. On: every map tries a slightly different area, to learn faster (useful in the first maps of a new diagnosis). You can switch it at any time. |
 | **Start the diagnosis** | Puts the first area in OpenTabletDriver. You can change shape and limits later without losing anything. |
 
 ### 3. Play
@@ -180,6 +183,7 @@ long/short, click offset, rotation, curved lines, perfection, how the area chang
 
 | Control | What it does |
 | --- | --- |
+| **Testing: On / Off** | Right under the area. Off (default): you always play the best area found so far, and it changes only as your replays change what's best. On: every map tries an area a little bigger or smaller than the best (by varying amounts) and, every two maps, a little moved to one side; it learns faster which width and place you're most consistent with. Switching it off puts the best area in straight away. |
 | **Pause / Resume** | Pause leaves the area found in OpenTabletDriver and stops changing it. Resume carries on from where it was. |
 | **Back to the previous area** | Puts back the area you had before the diagnosis and pauses. What it learnt is kept. |
 | **Show the current area in OpenTabletDriver** | Shown in a yellow box when the OpenTabletDriver window is open. That window keeps showing the area from when it was opened; you don't need to do anything about it (if you press Apply or Save there, the right area is put back by itself). The button reopens the window so it shows the current numbers. |
@@ -188,7 +192,7 @@ long/short, click offset, rotation, curved lines, perfection, how the area chang
 | **Position: Hold here** | The position stays where it is now; only the size changes. Use it if the area is making you move your wrist rest. |
 | **Hold where it was** | Holds the position of the area you had before the diagnosis. |
 | **Shape** | Like the screen / Fixed (with a height/width field and **Use**) / Free. Changing it deletes nothing. |
-| **Keep the area if no aim miss (On/Off)** | On: after a map without aim misses, the next map keeps the same area. Off (default): the area always changes, because clean maps also teach something. |
+| **Keep the area if no aim miss (On/Off)** | On: after a map without aim misses, the next map keeps the same area. Off (default): the area found is set again after every map, because clean maps also teach something. |
 | **Size: Adapts / Fixed: only move it** | Fixed keeps the current size on every map and only decides where to put it. |
 | **How to play** | The playing tips, always at hand. |
 | **Start over** | Deletes the data collected and starts again, from the whole tablet, the area found, the previous area, or a width you type. |
@@ -294,9 +298,10 @@ An area it had never used was set in OpenTabletDriver (old areas sent back by it
 are put right by themselves). Press **Resume**.
 
 **The area changes a little every map.**
-That's how it works: every map tries a width a little bigger or smaller than the best
-found (by varying amounts, so widths in between are played too), and every two maps a
-slightly different place. The tries shrink as the diagnosis gets surer.
+With **Testing** off it changes only as your replays change what's best, by small
+amounts. With Testing on, every map tries a width a little bigger or smaller than the
+best found (by varying amounts, so widths in between are played too), and every two maps
+a slightly different place: switch Testing off to always play the best area.
 
 **The window doesn't open / opens in the browser.**
 Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).

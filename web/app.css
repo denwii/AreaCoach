@@ -469,3 +469,4 @@ table.data tbody tr.click:hover td { background: var(--raised); }
 .otd-window-text { display: flex; gap: 10px; flex: 1 1 260px; font-size: var(--fs-s); color: var(--text-2); }
 .otd-window-text svg { flex: none; width: 16px; height: 16px; margin-top: 2px; }
 .otd-window-text b { color: var(--text); }
+.test-row { margin-top: 16px; padding: 12px 14px; border-radius: var(--r-m); background: var(--sunken); border: 1px solid var(--line); }

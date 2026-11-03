@@ -28,7 +28,7 @@ import (
 )
 
 // Version is the application version.
-var Version = "2.3.3"
+var Version = "2.4.0"
 
 // Server is the HTTP front-end.
 type Server struct {
@@ -460,7 +460,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var errMsg string
-	rangeChanged := false
+	rangeChanged, testChanged := false, false
 	s.eng.Store().Update(func(st *store.State) {
 		set := &st.Settings
 		for k, v := range in {
@@ -516,6 +516,9 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 				_ = json.Unmarshal(v, &set.Theme)
 			case "diagHold":
 				_ = json.Unmarshal(v, &set.DiagHold)
+			case "diagTest":
+				_ = json.Unmarshal(v, &set.DiagTest)
+				testChanged = true
 			case "diagRange":
 				// "110 - 150": the widths the diagnosis may use; "" for any
 				var txt string
@@ -533,6 +536,9 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	_ = s.eng.Store().Save()
 	if rangeChanged {
 		s.eng.RangeChanged()
+	}
+	if testChanged {
+		s.eng.TestingChanged()
 	}
 	s.eng.Invalidate()
 	s.eng.Wake()

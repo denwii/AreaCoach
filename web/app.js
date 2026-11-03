@@ -1103,11 +1103,18 @@
       <li><b>Play each map from start to finish with the same area.</b> When you pass a map playing solo, osu! saves the replay by itself: that's what I measure everything from. <b>In multiplayer osu! never saves it</b>: press F2 on the results screen. <b>If you fail, press F2 on the game-over screen</b>: osu! saves the replay of the part you played in the Replays folder, and I use it up to where you got. With NoFail you never fail and don't need to press anything. If you quit halfway with Esc there is no replay, and that map doesn't count.</li>
       <li><b>Varied maps</b>: jumps, streams, high AR, small and big circles. Your usual ones or a bit harder. The more jumps there are, the sooner I know whether you land long or short.</li>
       <li><b>Play normally</b>, without correcting yourself: the area adapts to you. Even if at first, with the whole tablet, you hit almost nothing: from how you move the pen I can tell how short you land.</li>
-      <li><b>Every map has a slightly different area</b>: the best found so far, a bit bigger or smaller in turn and by varying amounts. It isn't a mistake: that's how I find the width you're most precise and steady with. The differences shrink as the perfection percentage goes up.</li>
+      <li><b>Testing.</b> Off (default): every map has the best area found so far, and it changes only as your replays change what's best. On: every map has a slightly different area, the best found so far a bit bigger or smaller in turn and a little moved. It isn't a mistake: that's how I learn faster which width and position you're most consistent with.</li>
       <li><b>At the end of the map</b>, as soon as osu! saves the replay (you're on the results screen), I work out the area for the next map and put it in OpenTabletDriver, saved. It takes a few seconds: before starting the next map, check that the new area has arrived here.</li>
       <li><b>What it uses.</b> Only the replays osu! saves to disk, as in the normal analysis. The area in OpenTabletDriver is changed only between maps, as you would by hand.</li>
       <li><b>The OpenTabletDriver window</b> can stay open: it keeps showing the area numbers from when you opened it, and that's fine. If you press Apply or Save there, I put the right area back by myself.</li>
     </ul>`;
+  // Testing: every map tries an area a little different from the best (on),
+  // or always the best found (off)
+  const testSeg = (on) => `<div class="seg" role="group" aria-label="Testing"><button data-test="1" class="${on ? "on" : ""}" aria-pressed="${!!on}">On</button><button data-test="0" class="${on ? "" : "on"}" aria-pressed="${!on}">Off</button></div>`;
+  const testWords = (on) => on
+    ? "On: every map tries an area a little different from the best found, bigger or smaller in turn and a little moved, so I learn faster which width and position you're most consistent with. Off: you always play the best area found."
+    : "Off: you always play the best area found so far. It's the one with the fewest expected aim misses, worked out from your consistency (how much your clicks scatter with each width), whether you land long or short, and where on the tablet you're steadiest. Every map updates it. On: every map tries a slightly different area, to learn faster (useful in the first maps of a new diagnosis).";
+  const testRow = (on, extra) => `<div class="test-row"><div class="row" style="align-items:center;gap:10px"><span><b>Testing</b></span>${testSeg(on)}</div><p class="xs muted" style="margin-top:6px">${esc(testWords(on))}${extra || ""}</p></div>`;
   const sidePair = (dx, dy) => {
     const parts = [];
     if (Math.abs(dx) >= 0.05) parts.push(`${mmTxt(Math.abs(dx))} mm ${dx > 0 ? "right" : "left"}`);
@@ -1391,6 +1398,7 @@
         <p class="xs muted" style="margin-top:8px">${esc(shapeWords(state.diagShape, ratioVal(state.diagRatio), full && full.w ? full.h / full.w : 0, screen))} You can also change it later, during the diagnosis, without losing what it has measured.</p>
         <div class="row" style="margin-top:14px;align-items:flex-end;flex-wrap:wrap;gap:18px">${rangeField("adRange")}</div>
         <p class="xs muted" style="margin-top:8px">${esc(rangeWords())}</p>
+        ${testRow(!!(state.status.settings || {}).diagTest, " You can switch it at any time.")}
         <div class="row" style="margin-top:18px"><button class="btn primary big" id="adStart" ${c.liveOk ? "" : "disabled"}>Start the diagnosis</button></div>
       </div>`;
   }
@@ -1415,7 +1423,7 @@
       const placeTxt = Math.abs(pt[0]) >= 0.05 ? `I also move it ${nfTrim(Math.abs(pt[0]), 1)} mm ${pt[0] > 0 ? "right" : "left"} of the best place: every two maps I try a different side (right, left, below, above), to see where you're steadiest. `
         : Math.abs(pt[1]) >= 0.05 ? `I also move it ${nfTrim(Math.abs(pt[1]), 1)} mm ${pt[1] > 0 ? "lower" : "higher"} than the best place: every two maps I try a different side (right, left, below, above), to see where you're steadiest. ` : "";
       const tryTxt0 = a.try && Math.abs(a.try) >= 0.003 ? `You play this one ${nf(Math.abs(Math.exp(a.try) - 1) * 100, 1)}% ${a.try > 0 ? "bigger" : "smaller"} than the best area found: every map tries a slightly different width, and all of them help to find the right one. ` : blockTxt;
-      const tryTxt = tryTxt0 + placeTxt;
+      const tryTxt = a.testing ? tryTxt0 + placeTxt : "You play this one with the best area found so far. ";
       head = `<div class="live-head"><span class="live-dot on"></span><div><b>${a.nMaps ? "Play the next map" : "Play a map"}</b><div class="muted small">${tryTxt}The whole map with this area${a.nMaps ? "" : " (if you fail, press F2 on the game-over screen: it saves the replay of the part played)"}. At the end of the map, when osu! saves the replay, I work out the area for the next one and put it in OpenTabletDriver.${a.coach && a.coach.active ? (a.coach.isSet || a.coach.confirmed ? " The filter for this map is set." : " <b>Set the filter first</b>: the values are in The filter, below.") : ""}</div></div></div>`;
     }
     const lastM = maps.length ? maps[maps.length - 1] : null;
@@ -1449,6 +1457,7 @@
         ${otdWin}
         ${head}
         <div class="big-area readout">${rectTxt(a.cur)}<small>${posTxt(a.cur)}</small></div>
+        ${testRow(a.testing)}
         ${perfBlock(a)}
         <div style="margin-top:12px">
           <div class="kv-line"><span>Last map</span>${lastLine}</div>
@@ -1468,9 +1477,9 @@
         <div class="row" style="margin-top:14px;align-items:center;gap:10px;flex-wrap:wrap"><span class="small">Shape</span>${shapeSeg(a.shape, "data-reshape")}${a.shape === "fixed" ? `<span class="small">height/width</span><input class="input" id="adRatioLive" value="${esc(nfTrim(a.ratio, 3))}" inputmode="decimal" aria-label="Height divided by width" style="width:72px;text-align:center"><button class="btn small ghost" id="adRatioSet">Use</button>` : ""}</div>
         <p class="xs muted" style="margin-top:4px">${esc(shapeWords(a.shape, a.ratio, a.shapeFrom, a.screenRatio))} Changing it deletes nothing: the area found is worked out again with the new rule and I set it straight away.</p>
         <div class="row" style="margin-top:12px;align-items:center;gap:10px"><span class="small">Keep the area if no aim miss</span><div class="seg" role="group" aria-label="Keep the area if no aim miss"><button data-hold="1" class="${a.holdClean ? "on" : ""}" aria-pressed="${!!a.holdClean}">On</button><button data-hold="0" class="${a.holdClean ? "" : "on"}" aria-pressed="${!a.holdClean}">Off</button></div></div>
-        <p class="xs muted" style="margin-top:4px">${a.holdClean ? "If in a map you don't miss a single circle by clicking outside it, you play the next one with the same area. Misses from notelock or notes not pressed don't count. What I measured in that map I keep anyway." : "At the end of a map the area always changes, even if you didn't miss: clean maps also say which width you're most precise with. With On, after a map without aim misses I keep the same area."}</p>
+        <p class="xs muted" style="margin-top:4px">${a.holdClean ? "If in a map you don't miss a single circle by clicking outside it, you play the next one with the same area. Misses from notelock or notes not pressed don't count. What I measured in that map I keep anyway." : a.testing ? "At the end of a map the area always changes, even if you didn't miss: clean maps also say which width you're most precise with. With On, after a map without aim misses I keep the same area." : "At the end of a map I set the best area found again, even if you didn't miss: clean maps count for it too. With On, after a map without aim misses I keep the same area."}</p>
         <div class="row" style="margin-top:12px;align-items:center;gap:10px;flex-wrap:wrap"><span class="small">Size</span><div class="seg" role="group" aria-label="Area size"><button data-size="size-free" class="${a.sizeFixed ? "" : "on"}" aria-pressed="${!a.sizeFixed}">Adapts</button><button data-size="size-fixed" class="${a.sizeFixed ? "on" : ""}" aria-pressed="${!!a.sizeFixed}">Fixed: only move it</button></div></div>
-        <p class="xs muted" style="margin-top:4px">${a.sizeFixed ? `The size stays ${esc(rectTxt({ w: a.sizeW, h: a.sizeH }))} on every map: the analysis only decides where to put it (where your clicks land and where the aim comes out straight).` : `With every replay the area changes: the best found so far, a little bigger or smaller in turn and by varying amounts, so that the widths in between are played too (up to ${nf((a.tryMax || 0.08) * 100, 0)}%, less as the diagnosis gets sure). Every width tried says how precise and steady you are with it, and all of them count for the next area. Fixed: keeps the current size and only moves it.`}</p>
+        <p class="xs muted" style="margin-top:4px">${a.sizeFixed ? `The size stays ${esc(rectTxt({ w: a.sizeW, h: a.sizeH }))} on every map: the analysis only decides where to put it (where your clicks land and where the aim comes out straight).` : a.testing ? `With every replay the area changes: the best found so far, a little bigger or smaller in turn and by varying amounts, so that the widths in between are played too (up to ${nf((a.tryMax || 0.08) * 100, 0)}%, less as the diagnosis gets sure). Every width tried says how precise and steady you are with it, and all of them count for the next area. Fixed: keeps the current size and only moves it.` : "With every replay I work out the best size again and you play it. Fixed: keeps the current size and only moves it."}</p>
         <p class="xs muted" style="margin-top:12px">${a.nMaps === 1 ? "One map measured" : `${a.nMaps} maps measured`} (${a.n} stretches). Shape ${shapeName(" ")}. Before the diagnosis you had ${rectTxt(a.base)}.</p>
         <details class="why" style="margin-top:12px"><summary>How to play</summary>${DIAG_TIPS}</details>
         <details class="why" style="margin-top:6px" ${state.diagResetOpen ? "open" : ""} id="adResetBox"><summary>Start over</summary>
@@ -1628,6 +1637,15 @@
     $$("[data-size]", view).forEach((b) => b.addEventListener("click", () => {
       if (!a || (b.dataset.size === "size-fixed") === !!a.sizeFixed) return;
       calibDo(b.dataset.size, b.dataset.size === "size-fixed" ? "Size fixed: the area only moves" : "The size adapts again");
+    }));
+    $$("[data-test]", view).forEach((b) => b.addEventListener("click", async () => {
+      const on = b.dataset.test === "1";
+      if (on === !!(state.status.settings || {}).diagTest) return;
+      try {
+        await api("settings", { diagTest: on });
+        await refreshStatus(); render();
+        toast(on ? "Testing on: the next map tries a slightly different area" : "Testing off: you play the best area found");
+      } catch (e) { toast(e.message); }
     }));
     $$("[data-hold]", view).forEach((b) => b.addEventListener("click", async () => {
       try { await api("settings", { diagHold: b.dataset.hold === "1" }); await refreshStatus(); render(); } catch (e) { toast(e.message); }

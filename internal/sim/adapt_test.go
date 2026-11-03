@@ -92,6 +92,7 @@ type loopCase struct {
 	habit    [2]float64
 	fixPos   bool    // the place is kept still where the area was before
 	hold     bool    // no change after a map with clean aim
+	noTryAt  int     // > 0: testing off from this map on (1: from the first)
 	missA    float64 // > 0: the expected misses by width come from replays of a hand this shaky (mm)
 	local    bool    // no replays: the expected misses come from the maps of the diagnosis
 	// habits that do not follow the area (see Player)
@@ -207,6 +208,7 @@ func runLoop(t *testing.T, c loopCase) loopResult {
 			}
 		}
 		clicks, miss, _ := analysis.AimQuality(hits)
+		run.NoTry = c.noTryAt > 0 && play+1 >= c.noTryAt
 		best := run.Rest()
 		next, try := run.Next(miss == 0)
 		res.blocked, res.limits = append(res.blocked, run.Blocked), append(res.limits, run.Limit)
@@ -399,6 +401,42 @@ func TestAdaptTries(t *testing.T) {
 		if got[1] < 0.9*base.nat.W {
 			t.Errorf("a habit of jumping short shrank the area to %.1f mm (the hand is used to %.1f)", got[1], base.nat.W)
 		}
+	}
+}
+
+// Testing off: every map is played with the best area found so far, from
+// the start or after some maps with tries. From the start it still finds the
+// width the hand is used to (the jumps say it); after the tries the area no
+// longer swings between two widths, it only follows what is best.
+func TestAdaptNoTries(t *testing.T) {
+	ratio := 1080.0 / 1920
+	cases := []loopCase{
+		{name: "from-start", noTryAt: 1, locked: true, nat: otd.Rect{W: 72, H: 72 * ratio, X: 74, Y: 48}, anchor: otd.Rect{W: 90, H: 50.625, X: 76, Y: 47.5},
+			residual: 0.35, plays: 10, missA: 0.55, tol: 0.08},
+		{name: "after-tries", noTryAt: 13, locked: true, nat: otd.Rect{W: 62, H: 62 * ratio, X: 74, Y: 48}, anchor: otd.Rect{W: 152, H: 85.5, X: 76, Y: 47.5},
+			residual: 0.15, plays: 20, missA: 1, handA: 1, tol: 0.5},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := runLoop(t, c)
+			from := c.noTryAt - 1
+			for k := from + 1; k < len(r.areas); k++ {
+				// the area of map k is the best one found after map k-1
+				if !sameR(r.areas[k], r.bests[k-1]) {
+					t.Errorf("map %d played with %.2f×%.2f, the best found was %.2f×%.2f", k+1, r.areas[k].W, r.areas[k].H, r.bests[k-1].W, r.bests[k-1].H)
+				}
+			}
+			// no swinging: from one map to the next the width changes less
+			// than the tries did
+			for k := from + 2; k < len(r.areas); k++ {
+				if d := math.Abs(math.Log(r.areas[k].W / r.areas[k-1].W)); k > from+3 && d > analysis.AdaptTryMin {
+					t.Errorf("maps %d → %d: width %.2f → %.2f (%.1f%%)", k, k+1, r.areas[k-1].W, r.areas[k].W, 100*d)
+				}
+			}
+			if math.Abs(r.fit.Target.W/c.nat.W-1) > c.tol {
+				t.Errorf("width %.1f, the hand is used to %.1f", r.fit.Target.W, c.nat.W)
+			}
+		})
 	}
 }
 

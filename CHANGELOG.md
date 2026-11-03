@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.0
+
+- New **Testing** switch in the diagnosis (and on its start screen). Off, the new default:
+  every map is played with the best area found so far, with no tries; it still changes map
+  by map as the replays change what's best (fewest expected aim misses, from your
+  consistency, how long or short you land and where you're steadiest). On: every map tries
+  a slightly different area, as before, to learn faster. Switching it off puts the best
+  area in straight away.
+
 ## 2.3.3
 
 - Replays are no longer filtered by player name: replays saved while not logged in

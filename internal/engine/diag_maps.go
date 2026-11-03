@@ -663,6 +663,22 @@ func (e *Engine) RangeChanged() {
 	e.emit("calib")
 }
 
+// TestingChanged is called when testing is switched on or off. Off: the
+// best area found so far goes in at once, instead of the one being tried.
+// On: the next map tries one, as usual.
+func (e *Engine) TestingChanged() {
+	c := e.st.State().Calib
+	if c == nil || c.Mode != diagMode || e.st.State().Settings.DiagTest {
+		return
+	}
+	ls := &e.ad
+	ls.mu.Lock()
+	e.adaptRefresh(ls, c, "testing off: the best area found")
+	ls.mu.Unlock()
+	_ = e.st.Save()
+	e.emit("calib")
+}
+
 func clampF(v, lo, hi float64) float64 { return math.Max(lo, math.Min(hi, v)) }
 
 /* ---------- the maps ---------- */
@@ -859,6 +875,7 @@ func mapMeasure(ws []analysis.CalibPoint) (g, dx, dy, rot float64) {
 func (e *Engine) adaptNextMap(ls *adaptState, c *store.CalibSession, run *analysis.AdaptRun, last *store.AdaptMap, maps []store.AdaptMap) {
 	e.adaptLocalModel(ls, c, maps)
 	run.HoldClean = e.st.State().Settings.DiagHold
+	run.NoTry = !e.st.State().Settings.DiagTest
 	run.SetOpts(e.adaptOpts(c, e.Env().Setup))
 	defer func() { e.coachNext(e.st.State().Calib, last, maps, run.Fit.Score.Miss, run.Fit.Target.W) }()
 	if known, reaches := analysis.AreaReaches(run.Obs, c.NoReachAt); known && !reaches {
@@ -879,6 +896,8 @@ func (e *Engine) adaptNextMap(ls *adaptState, c *store.CalibSession, run *analys
 	switch {
 	case last.Held:
 		note = "no aim misses: area left as it was"
+	case run.NoTry:
+		note = "testing off: the best area found so far"
 	case try != 0:
 		note = fmt.Sprintf("you play the next one %s%% %s than the best found: every map tries a slightly different width, and all of them help to find the right one",
 			fmt.Sprintf("%.1f", 100*math.Abs(math.Exp(try)-1)), map[bool]string{true: "bigger", false: "smaller"}[try > 0])
@@ -1164,6 +1183,7 @@ type AdaptStatus struct {
 	PosX        float64                  `json:"posX"`
 	PosY        float64                  `json:"posY"`
 	HoldClean   bool                     `json:"holdClean"` // no change after a map with clean aim
+	Testing     bool                     `json:"testing"`   // every map tries an area a little different from the best
 	SizeFixed   bool                     `json:"sizeFixed"` // the size is kept, only the place adapts
 	SizeW       float64                  `json:"sizeW"`
 	SizeH       float64                  `json:"sizeH"`
@@ -1225,7 +1245,7 @@ func (e *Engine) adaptStatus(c *store.CalibSession) *AdaptStatus {
 	}
 	out.Maps = maps
 	out.PosFixed, out.PosX, out.PosY = c.PosFixed, c.PosX, c.PosY
-	out.HoldClean = set.DiagHold
+	out.HoldClean, out.Testing = set.DiagHold, set.DiagTest
 	out.SizeFixed, out.SizeW, out.SizeH = c.SizeFixed, c.SizeW, c.SizeH
 	out.TryMin, out.TryMax = analysis.AdaptTryMin, analysis.AdaptTryMax
 	for i := len(c.Maps) - 1; i >= 0; i-- {
