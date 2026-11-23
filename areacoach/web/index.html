@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Area Coach</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Area Coach <span id="ver" class="muted"></span></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="replay" class="tab on">Replay</button>
+    <button role="tab" data-tab="live" class="tab">Live</button>
+    <button role="tab" data-tab="settings" class="tab">Settings</button>
+  </nav>
+  <div id="areaNow" class="areanow"></div>
+</header>
+<div id="problems"></div>
+<main id="view"></main>
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
