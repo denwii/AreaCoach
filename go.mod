@@ -4,7 +4,6 @@ go 1.24
 
 require (
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
-	github.com/jezek/xgb v1.1.1
 	github.com/ulikunitz/xz v0.5.17
 	golang.org/x/sys v0.33.0
 )

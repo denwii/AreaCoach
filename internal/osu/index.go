@@ -1,19 +1,22 @@
 package osu
 
 import (
+	"bufio"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Index maps beatmap MD5 hashes to .osu files. It uses osu!.db when
-// possible and falls back to hashing the Songs folder (cached on disk).
+// Index maps beatmap MD5 hashes (and window titles) to .osu files. It uses
+// osu!.db when possible and falls back to reading the Songs folder (cached
+// on disk), where the maps just downloaded are before osu!.db has them.
 type Index struct {
 	mu        sync.RWMutex
 	osuDir    string
@@ -27,9 +30,10 @@ type Index struct {
 }
 
 type scanEntry struct {
-	Size  int64  `json:"s"`
-	MTime int64  `json:"t"`
-	MD5   string `json:"h"`
+	Size  int64    `json:"s"`
+	MTime int64    `json:"t"`
+	MD5   string   `json:"h"`
+	Meta  *DBEntry `json:"m,omitempty"`
 }
 
 // NewIndex prepares an index; call Refresh before use.
@@ -40,6 +44,9 @@ func NewIndex(osuDir, songsDir, cachePath string) *Index {
 		_ = json.Unmarshal(b, &ix.scanCache)
 		for p, e := range ix.scanCache {
 			ix.byMD5[e.MD5] = p
+			if e.Meta != nil {
+				ix.meta[e.MD5] = *e.Meta
+			}
 		}
 	}
 	return ix
@@ -137,9 +144,17 @@ func (ix *Index) Scan(force bool) int {
 		}
 		sum := md5.Sum(b)
 		h := hex.EncodeToString(sum[:])
+		e := scanEntry{Size: info.Size(), MTime: info.ModTime().UnixNano(), MD5: h}
+		if m, ok := ReadMeta(p); ok {
+			m.MD5 = h
+			e.Meta = &m
+		}
 		ix.mu.Lock()
-		ix.scanCache[p] = scanEntry{Size: info.Size(), MTime: info.ModTime().UnixNano(), MD5: h}
+		ix.scanCache[p] = e
 		ix.byMD5[h] = p
+		if _, ok := ix.meta[h]; !ok && e.Meta != nil {
+			ix.meta[h] = *e.Meta
+		}
 		ix.mu.Unlock()
 		added++
 		return nil
@@ -156,6 +171,17 @@ func (ix *Index) Scan(force bool) int {
 		_ = os.WriteFile(ix.cachePath, data, 0o644)
 	}
 	return added
+}
+
+// ScanIfOlder scans the Songs folder when the last scan is older than d.
+func (ix *Index) ScanIfOlder(d time.Duration) int {
+	ix.mu.RLock()
+	last := ix.lastScan
+	ix.mu.RUnlock()
+	if time.Since(last) < d {
+		return 0
+	}
+	return ix.Scan(true)
 }
 
 // Meta is what osu!.db says of a map, if it has it.
@@ -176,36 +202,90 @@ func TitleKey(artist, title, version string) string {
 func normTitle(s string) string { return strings.Join(strings.Fields(strings.ToLower(s)), " ") }
 
 // FindByTitle returns the .osu files of the maps whose window title is t
-// ("Artist - Title [Difficulty]", without the "osu!  - " in front). When no
-// map matches exactly, it looks for one whose title and difficulty end the
-// window title (the part in front may be written differently).
+// ("Artist - Title [Difficulty]", without the "osu!  - " in front).
 func (ix *Index) FindByTitle(t string) []string {
-	key := strings.ToLower(strings.TrimSpace(t))
-	loose := normTitle(t)
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
-	var out, near []string
-	for md, e := range ix.meta {
-		if e.Mode != 0 {
-			continue
+	return matchTitle(t, func(yield func(DBEntry, string)) {
+		for md, e := range ix.meta {
+			if p, ok := ix.byMD5[md]; ok {
+				yield(e, p)
+			}
 		}
-		p, ok := ix.byMD5[md]
-		if !ok {
-			continue
+	})
+}
+
+// matchTitle picks, among the maps listed, those whose window title is t.
+// When none matches exactly, it takes those whose title and difficulty end
+// the window title (the part in front may be written differently).
+func matchTitle(t string, each func(func(DBEntry, string))) []string {
+	key := strings.ToLower(strings.TrimSpace(t))
+	loose := normTitle(t)
+	var out, near []string
+	each(func(e DBEntry, p string) {
+		if e.Mode != 0 {
+			return
 		}
 		if TitleKey(e.Artist, e.Title, e.Version) == key || (e.ArtistU != "" && TitleKey(e.ArtistU, e.TitleU, e.Version) == key) {
 			out = append(out, p)
-			continue
+			return
 		}
 		for _, ti := range []string{e.Title, e.TitleU} {
 			if ti != "" && strings.HasSuffix(loose, normTitle(ti+" ["+e.Version+"]")) {
 				near = append(near, p)
-				break
+				return
 			}
 		}
-	}
+	})
 	if len(out) == 0 && len(near) <= 5 {
 		return near
 	}
 	return out
+}
+
+// ReadMeta reads the title of a map from the top of its .osu file.
+func ReadMeta(path string) (DBEntry, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return DBEntry{}, false
+	}
+	defer f.Close()
+	var e DBEntry
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64*1024), 1<<20)
+	section := ""
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(line, "[") {
+			section = line
+			if section == "[Difficulty]" || section == "[Events]" || section == "[HitObjects]" {
+				break
+			}
+			continue
+		}
+		k, v, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		switch section + k {
+		case "[General]Mode":
+			if m, err := strconv.Atoi(v); err == nil {
+				e.Mode = byte(m)
+			}
+		case "[Metadata]Artist":
+			e.Artist = v
+		case "[Metadata]ArtistUnicode":
+			e.ArtistU = v
+		case "[Metadata]Title":
+			e.Title = v
+		case "[Metadata]TitleUnicode":
+			e.TitleU = v
+		case "[Metadata]Version":
+			e.Version = v
+		case "[Metadata]Creator":
+			e.Creator = v
+		}
+	}
+	return e, e.Title != "" || e.Version != ""
 }

@@ -318,7 +318,22 @@ func diffRange(d, min, mid, max float64) float64 {
 // DifficultyFor applies mods to the map's difficulty values. Values are kept
 // in single precision like the game, because stacking depends on it.
 func (bm *Beatmap) DifficultyFor(mods uint32) Difficulty {
+	return bm.DifficultyAdj(mods, Adjust{})
+}
+
+// DifficultyAdj is DifficultyFor with what osu!lazer's mod settings change:
+// the difficulty set by hand and the speed.
+func (bm *Beatmap) DifficultyAdj(mods uint32, a Adjust) Difficulty {
 	cs, ar, od := float32(bm.CS), float32(bm.AR), float32(bm.OD)
+	if a.HasCS {
+		cs = float32(a.CS)
+	}
+	if a.HasAR {
+		ar = float32(a.AR)
+	}
+	if a.HasOD {
+		od = float32(a.OD)
+	}
 	if mods&ModHardRock != 0 {
 		cs = min32(cs*1.3, 10)
 		ar = min32(ar*1.4, 10)
@@ -330,6 +345,9 @@ func (bm *Beatmap) DifficultyFor(mods uint32) Difficulty {
 		od *= 0.5
 	}
 	d := Difficulty{CS: float64(cs), AR: float64(ar), OD: float64(od), Rate: RateOf(mods)}
+	if a.Rate > 0 {
+		d.Rate = a.Rate
+	}
 	d.Scale = float64(float32((1 - 0.7*(float64(cs)-5)/5) / 2))
 	d.Radius = 64 * d.Scale
 	d.Preempt = math.Trunc(diffRange(float64(ar), 1800, 1200, 450))
@@ -427,7 +445,12 @@ func (bm *Beatmap) timingAt(t float64) (beatLength, sv float64) {
 // Objects builds the playable objects for the given mods: HR flip, slider
 // paths, end times and stacking, exactly as the game does.
 func (bm *Beatmap) Objects(mods uint32) ([]HitObject, Difficulty) {
-	d := bm.DifficultyFor(mods)
+	return bm.ObjectsAdj(mods, Adjust{})
+}
+
+// ObjectsAdj is Objects with what osu!lazer's mod settings change.
+func (bm *Beatmap) ObjectsAdj(mods uint32, a Adjust) ([]HitObject, Difficulty) {
+	d := bm.DifficultyAdj(mods, a)
 	hr := mods&ModHardRock != 0
 	objs := make([]HitObject, 0, len(bm.raw))
 	for i, r := range bm.raw {

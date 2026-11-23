@@ -1,4 +1,4 @@
-// Area Coach: finds the ideal tablet area for osu! from your replays.
+// Area Coach: the tablet area for osu! from how you aim.
 package main
 
 import (
@@ -8,10 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"areacoach/internal/engine"
+	"areacoach/internal/app"
 	"areacoach/internal/platform"
 	"areacoach/internal/server"
-	"areacoach/internal/store"
 	"areacoach/web"
 )
 
@@ -20,32 +19,36 @@ func main() {
 	if !acquireSingleInstance() {
 		return
 	}
-	dir := store.DefaultDir()
-	if d := os.Getenv("AREACOACH_DATA"); d != "" {
-		dir = d
-	}
+	dir := dataDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		platform.MessageBox("Area Coach", "I can't create the data folder:\n"+dir, true)
 		return
 	}
 	setupLog(dir)
-	st, err := store.Open(dir)
-	if err != nil {
-		platform.MessageBox("Area Coach", "I can't open the saved data:\n"+err.Error(), true)
-		return
-	}
-	eng := engine.New(st)
-	eng.Run()
-	srv := server.New(eng, web.FS)
+	a := app.New(dir, server.Version)
+	a.Run()
+	srv := server.New(a, web.FS, dir)
 	url, err := srv.Start()
 	if err != nil {
 		platform.MessageBox("Area Coach", "I can't start the interface:\n"+err.Error(), true)
 		return
 	}
-	log.Printf("Area Coach %s started: %s", server.Version, url)
-	showUI(url, dir, st.State().Settings.Theme)
-	eng.Shutdown()
-	_ = st.Save()
+	log.Printf("Area Coach %s started", server.Version)
+	showUI(url, dir, "")
+	a.Close()
+}
+
+func dataDir() string {
+	if d := os.Getenv("AREACOACH_DATA"); d != "" {
+		return d
+	}
+	if ad := os.Getenv("APPDATA"); ad != "" {
+		return filepath.Join(ad, "AreaCoach")
+	}
+	if h, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(h, ".config", "AreaCoach")
+	}
+	return "AreaCoach-data"
 }
 
 func setupLog(dir string) {

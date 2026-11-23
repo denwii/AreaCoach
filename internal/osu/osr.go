@@ -70,6 +70,10 @@ type ReplayHeader struct {
 	Mods       uint32
 	Timestamp  time.Time
 	OnlineID   int64
+	// a replay of osu!lazer, with its mods as it names them (and their
+	// settings: the speed of DT and HT can be chosen, for one)
+	Lazer      bool
+	LazerMods  []LazerMod
 	compressed []byte
 }
 
@@ -144,6 +148,14 @@ func parseReplayHeader(b []byte) (*ReplayHeader, error) {
 	}
 	if r.err == nil && r.pos+8 <= len(b) {
 		h.OnlineID = r.i64()
+		r.err = nil
+	}
+	if r.err == nil && h.Version >= LazerVersion && r.pos+4 <= len(b) {
+		// osu!lazer: its own data after, with the mods and their settings
+		h.Lazer = true
+		if n := int(r.i32()); r.err == nil && n > 0 && r.pos+n <= len(b) {
+			h.LazerMods = parseLazerInfo(r.bytes(n))
+		}
 		r.err = nil
 	}
 	if r.err != nil {

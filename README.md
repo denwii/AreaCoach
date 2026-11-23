@@ -1,314 +1,192 @@
 # Area Coach
 
-**Area Coach finds the tablet area that fits your hand in osu! (stable).**
-You play your own maps; after each one it reads the replay, measures how you aim and
-sets a better area in OpenTabletDriver for the next map. Map after map the changes get
-smaller until the area settles on the one you are most precise and steady with.
+**Area Coach finds the tablet area for osu! (stable and lazer) from how you really aim.**
+It has two sections:
 
-It can also help you tune AbstractQbit's **Radial Follow** smoothing filter for
-OpenTabletDriver.
+- **Replay**: as soon as you finish a map, it reads the replay osu! just saved and tells
+  you how to move and resize your area. One button puts it in OpenTabletDriver.
+- **Live**: for practice. While you play, it reshapes the area a little at a time, with
+  a soft sound at every touch, like sculpting. It remembers how you play at each width,
+  day after day, and finds by itself the band of widths that suit you.
 
-![The diagnosis while it runs](docs/screenshots/diagnosis.png)
+The Replay advice comes from one play alone, worked out with plain geometry. Live adds a
+memory of how each width went for you, so that it settles where you miss the least.
 
-- [What it does](#what-it-does)
+![The advice after a map](docs/screenshots/replay.png)
+
+- [How the advice is worked out](#how-the-advice-is-worked-out)
+- [The Replay section](#the-replay-section)
+- [The Live section](#the-live-section)
+- [Settings](#settings)
 - [What it reads and changes](#what-it-reads-and-changes)
-- [Requirements](#requirements)
-- [Install](#install)
-- [First start](#first-start)
-- [The diagnosis, step by step](#the-diagnosis-step-by-step)
-- [The guided filter (Radial Follow)](#the-guided-filter-radial-follow)
-- [The other pages](#the-other-pages)
+- [Requirements and install](#requirements-and-install)
 - [Troubleshooting](#troubleshooting)
 - [Build from source](#build-from-source)
 - [License and credits](#license-and-credits)
 
-## What it does
+## How the advice is worked out
 
-- **In-game diagnosis.** You play normal maps, each one from start to finish with a
-  single area. When osu! saves the replay, Area Coach measures it: whether you overshoot
-  or undershoot jumps, how precise you are with that width, where your clicks land
-  against the circles, whether your movements come out turned (wrist rotation), how
-  straight the paths between circles are. Then it works out the width with the fewest
-  expected aim misses and the place where your aim comes out straightest, and puts that
-  area in OpenTabletDriver before you start the next map.
-- **Always the best area, or testing.** By default every map is played with the best area
-  found so far: the one with the fewest expected aim misses, worked out from your
-  consistency (how much your clicks scatter with each width), whether you land long or
-  short, and where on the tablet you're steadiest. Every map updates it. With **Testing**
-  on, every map tries an area a little bigger or smaller than the best and a little moved
-  to one side, to learn faster which width and place you're steadiest with.
-- **A "perfection" percentage** says how close the area found is to a perfect one: how
-  sure the diagnosis is, times how clean your aim is with it.
-- **Guided filter.** For Radial Follow it tells you which values to set for the next map;
-  you set them yourself, and after every replay it gives you new ones, until it finds the
-  values that help you most.
-- **Replay analysis.** Every replay you save while using it is analysed: how you aim,
-  which area your replays point to, your progress over time and every play in detail.
-  Replays from before you first started Area Coach are ignored, so there's no long
-  import of your old replays.
+1. **Every click of the play.** For each circle and slider head: where the circle was,
+   how big it was, and where your pen was on the tablet when you pressed (from the
+   cursor in the replay and the area you played with).
+2. **Every candidate area.** Your height / width ratio stays fixed, your rotation too;
+   the width can be anything in your width range, the area anywhere on the tablet. For
+   each candidate, the circles are put on the tablet where that area would put them,
+   just as big as you had them, and it counts how many of your pen presses land inside.
+3. **The best one.** The area with the most presses inside the circles. Among areas
+   about as good, the one with the presses closest to the centres: if you always press a
+   little to the right of the circles, the area moves so that your presses land on the
+   centre. Misses always weigh far more than that: moving a hundred presses from 0.6 to
+   0.4 of the radius from the centre is worth one circle hit, and the advice never has
+   more misses than the area you played with.
+4. **How sure.** The same search is done again on the clicks drawn at random from the
+   play: how much the answer moves is the "±" shown. Changes smaller than that are only
+   noise of that one map, so the advice says to keep the area (the numbers are still
+   shown). If the notes of a map are all in one part of the screen they can't tell the
+   width: then only the position is changed.
 
-The interface is a local web page shown in its own window.
+Presses far from any circle (more than two radii away) don't pull the area, and a map
+given up halfway (pen lifted, or pressing anywhere until the end) counts only up to where
+you stopped.
+
+The advice assumes your hand makes the same movements with the new area. Change it, play
+another map, and see what the next replay says.
+
+## The Replay section
+
+Play a map to the end in osu! or osu!lazer. When the replay is saved (osu! saves one for
+every map you finish), the advice appears at once:
+
+- what to change, in words: *Make it 1.20 mm wider, then move it 0.80 mm right and 0.30
+  mm up*;
+- the area you played with and the suggested one, number by number, as OpenTabletDriver
+  writes them;
+- the clicks outside the circle with your area and with the suggested one (same
+  movements), where you press around the circles on average, and how sure it is;
+- the two areas drawn on your tablet and all your presses drawn around a circle.
+
+**Put this area in OpenTabletDriver** applies it; **Go back** returns to the area before.
+Only the play just made counts: replays saved before you opened the program are left
+out, unless you press **Analyse my latest replay**, which takes the newest replay there
+is (useful when you open Area Coach after playing).
+
+The area of each click is the one that was in use at that moment: Area Coach follows the
+area in OpenTabletDriver while it is open, so any area you set, by hand or with a
+button, counts for the clicks made with it.
+
+This section only reads the replay file osu! saves after a map, and changes the area only
+when you press the button: the same as setting it by hand in OpenTabletDriver.
+
+## The Live section
+
+![Live calibration](docs/screenshots/live.png)
+
+Press **Start live calibration** and play. Area Coach:
+
+- reads the map you are playing from the osu! window title (stable and lazer), and finds
+  it in your songs;
+- notes every press of the keys that click (the ones in osu!'s settings, for example V and
+  B) with the cursor position, a thousand times a second;
+- lines the presses up with the circles of the map, finding by itself the speed (DT,
+  HT, and any speed in lazer), Hard Rock, pauses and retries;
+- every 30 clicks fits the area to your last 150 clicks (as above) and moves the area
+  part of the way there: with *normal*, at most about 1.2% of the width and 0.6 mm per
+  change. Each change plays a sound: lower when the area grows, higher when it shrinks,
+  in between when it only moves.
+
+It starts from whatever area is set, and an area you set by hand while it runs is where
+it goes on from. At the end of every map the area is saved in OpenTabletDriver's file;
+**Back to that area** returns to the area you had when you started.
+
+### Your widths: the band it finds by itself
+
+Following your last clicks alone, Live could keep shrinking (or growing) the area: if you
+land short on fast jumps, it shrinks it; and a smaller area may line up better with your
+hand while you miss more, because every bit of shake of the hand becomes more pixels. So
+Live also remembers, for each millimetre of width you played:
+
+- **how you land on jumps**: long or short, and by how much;
+- **your misses, compared on notes alike**: the same kind of jump with the same time
+  for it, so that a hard map doesn't make a width look bad. Near misses count a little
+  too: that way a few maps are enough, instead of thousands of clicks.
+
+A width is judged only when there are at least about 60 clicks and three different maps
+around it: one map can just be easy. From that it finds:
+
+- **your band**: the widths that go about as well as the best one. Inside it, Live moves
+  freely, as before. Past its edges it goes only a little (about 1-1.5 mm), with half
+  steps, slower still where the misses are seen to grow that way; if they really grow,
+  that edge becomes a wall and the area comes back. If it goes well out there, the band
+  stretches: it is elastic, and follows you as your hand changes;
+- **where you go from long to short**: if you land long below a width and short above
+  it, it heads there instead of bouncing back and forth;
+- **habits**: if you land short (or long) by about the same share at every width, the
+  area isn't what causes it, and shrinking would only follow you: it stops chasing it
+  and tells you so.
+
+The changes get finer as it learns (about half the size once it knows you well), and
+widths it hasn't measured yet are crossed with smaller steps, so that they get measured.
+The memory is kept per tablet and per shape of area, across days: a day counts half
+after 10 days and is forgotten after 60. The maps you finish with Live off count too
+(through their replays). **Your widths** shows it all, and **Forget it and start again**
+clears it.
+
+**For practice: offline or unranked.** Live changes the area while a map is played, from
+how you are playing it: use it to practise, then play ranked with the area it found and
+Live off. It doesn't touch osu!: it reads the window title, the cursor and the keys that
+click, like a key overlay, and changes the area in OpenTabletDriver.
+
+## Settings
+
+![Settings](docs/screenshots/settings.png)
+
+- **Height / width**: the shape of the area, kept fixed (0.5625 is 16:9, 0.75 is 4:3).
+  Empty: the shape of the area in use.
+- **Width range**: optional. Live finds the widths that suit you by itself; a range here
+  is a hard wall for it and for the advice.
+- **Keys that click** (Live): empty takes them from osu! stable's settings (Z and X for
+  lazer). **Pen tip clicks**: whether the pen tip (a mouse button) counts as a press.
+- **Each change** (Live): gentle, normal or strong. **Sound**: on or off.
+- **Where things are**: the osu! and osu!lazer folders, OpenTabletDriver's
+  `settings.json` and the tablet, when they aren't found by themselves.
 
 ## What it reads and changes
 
-Area Coach works only with files and with OpenTabletDriver:
+- **Reads**: the replays osu! saves (`Data/r` for stable, the files folder for lazer),
+  your maps, osu!'s settings (resolution, window, keys), OpenTabletDriver's settings.
+  In Live also the osu! window title and position, the cursor position and which keys
+  are held.
+- **Changes**: only the area of your tablet profile in OpenTabletDriver, when you press
+  a button or while Live runs. It sets it in the running OpenTabletDriver and in its
+  `settings.json` (a copy of the original, `settings.json.areacoach-backup`, is kept the
+  first time).
+- Nothing is sent anywhere. Its own files (settings, the memory of your widths in
+  `calibration.json`, a log) are in `%APPDATA%\AreaCoach`.
 
-- it **reads files** osu! has already written: replays (`Data\r` and `Replays`),
-  `osu!.db`, the `.osu` map files and the osu! config file;
-- it **changes the tablet area in OpenTabletDriver** (through OpenTabletDriver's own
-  local connection and its `settings.json`), only between maps, as you would by hand.
-  The first time it saves a copy of your original file as
-  `settings.json.areacoach-backup`. Your filter settings are only read, never changed.
+## Requirements and install
 
-It doesn't interact with the osu! game itself, and nothing changes while you are playing
-a map.
+- Windows 10 or 11
+- [OpenTabletDriver](https://opentabletdriver.net) 0.6, in absolute mode
+- osu! stable or osu!lazer
+- The Microsoft Edge WebView2 Runtime (part of Windows 11; without it the interface opens
+  in the browser)
 
-## Requirements
-
-- **Windows 10 or 11.**
-- **osu! stable** (not lazer).
-- **[OpenTabletDriver](https://opentabletdriver.net) 0.6.x**, running, with your tablet
-  in **Absolute Mode**. The Wacom driver must not be using the tablet at the same time.
-- In osu!: mouse **sensitivity 1.0** and "Map absolute input to window" off (the program
-  warns you if they are not).
-- Optional, for the guided filter: the **AbstractQbit's Radial Follow Smoothing** plugin
-  (OpenTabletDriver → Plugins → Plugin Manager).
-
-The window uses Microsoft Edge **WebView2**, already part of Windows 11 and of most
-Windows 10 installs. Without it the interface opens in your browser instead, with a small
-window you keep open while you use it.
-
-## Install
-
-1. Download **[`AreaCoach.exe`](../../raw/main/AreaCoach.exe)** (it's also in the file list
-   at the top of this page: click it, then the download button).
-2. Put it wherever you like (Desktop, a folder of your tools…). There is no installer.
-3. Start OpenTabletDriver, then double-click `AreaCoach.exe`.
-
-Windows may show "Windows protected your PC" because the program isn't signed: click
-**More info → Run anyway**.
-
-Your data (analysed replays, history, settings, log) is kept in
-`%APPDATA%\AreaCoach`. To uninstall, delete `AreaCoach.exe` and that folder.
-
-## First start
-
-On the first start Area Coach finds osu! and OpenTabletDriver by itself and reads your
-resolution and your current area. From then on, every replay you save is analysed;
-replays saved before the first start are not used. Open **Settings** and check:
-
-| Setting | What it is |
-| --- | --- |
-| **osu! folder** | Where osu! is installed. Empty = found automatically. Set it if you have more than one install. |
-| **Game resolution** | The resolution osu! runs at. Empty = read from the osu! config. |
-| **settings.json file** | The OpenTabletDriver settings file. Empty = found automatically. |
-| **Profile to use** | Shown when OpenTabletDriver has profiles for more than one tablet: pick the one you play with. |
-| **Tablet model** | Only if the tablet size shown is wrong. |
-| **Grip profiles** | Every replay belongs to a profile. When you change grip (for example from tripod to palm), create a new profile: the analysis starts from zero for it, and you can switch back any time. The menu at the top right switches profile too. |
-| **Area history** | Every area you have used, recorded automatically. If an area change was detected late, move the date earlier so more plays count. |
-| **Open the folder / Re-import all replays** | Opens the data folder / analyses again, from scratch, the replays saved since the first start. |
-| **Theme** | System, dark or light. |
-
-## The diagnosis, step by step
-
-### 1. Before you start
-
-- OpenTabletDriver must be running. The Diagnosis page shows **"OpenTabletDriver
-  answers"** when it can set the area, and the tablet it sees.
-- The **OpenTabletDriver window** can stay open (you need it for the guided filter). It
-  keeps showing the area numbers from when it was opened, so they look old: that's fine.
-  If you press Apply or Save there, Area Coach puts the right area back by itself.
-- Pick maps you know, with variety: jumps, streams, small and big circles, at your usual
-  level or a bit harder.
-- Any **rotation** set in OpenTabletDriver works (a tablet held sideways, upside down or
-  a little turned): the rotation is never changed, the areas always fit the tablet as it
-  is turned, and directions on the page (left, right, up, down) are as seen on your
-  screen.
-
-### 2. Start options
-
-![The start of the diagnosis](docs/screenshots/start.png)
-
-| Option | What it does |
-| --- | --- |
-| **Start from: Whole tablet** | The first map uses the largest area that fits the tablet (or the largest width you allow). It's the fastest way to learn the scale of your hand: from the first map it sees how short you land. At first you'll hit almost nothing, and that's normal. |
-| **Start from: Current area** | Starts from the area you have now in OpenTabletDriver. Good if you are already close, or to fine-tune it. It takes a few more maps. |
-| **Start from: Pick the width** | Starts from a width you type, centred where your area is now. |
-| **Area shape: Like the screen** | "Forced proportions" on: every area has the proportions of your screen. |
-| **Area shape: Fixed** | You choose the height/width ratio (for example 0.75 is 4:3). Only size and position change. |
-| **Area shape: Free** | Width and height adapt on their own, but the shape stays close to the starting one. |
-| **Widths allowed (mm)** | Optional limits, for example `110 - 150`. A single number is a minimum. Empty = no limit. |
-| **Testing: On / Off** | Off (default): every map is played with the best area found so far. On: every map tries a slightly different area, to learn faster (useful in the first maps of a new diagnosis). You can switch it at any time. |
-| **Start the diagnosis** | Puts the first area in OpenTabletDriver. You can change shape and limits later without losing anything. |
-
-### 3. Play
-
-- **Play the whole map with the same area.** Don't correct yourself: play normally, the
-  area adapts to you.
-- **Solo, map passed:** osu! saves the replay by itself. Nothing to do.
-- **You failed:** press **F2 on the game-over screen**. osu! saves the replay of the part
-  you played in the `Replays` folder, and it is used up to where you got. With NoFail you
-  never fail and don't need to press anything.
-- **Multiplayer:** osu! never saves the replay by itself: press **F2 on the results
-  screen**.
-- **Quit with Esc:** there is no replay, and that map doesn't count.
-
-At the end of the map, a few seconds after osu! saves the replay, the page shows what it
-measured and the new area is already in OpenTabletDriver. **Check that the new area has
-arrived before you start the next map.**
-
-### 4. Reading the page
-
-The right-hand panel:
-
-| Line | Meaning |
-| --- | --- |
-| **Play the next map** | What to do now, and why this map's area differs from the best one (a try a little bigger/smaller or moved to one side, or a limit you set). |
-| **The big numbers** | The area in OpenTabletDriver right now (size and X/Y centre). |
-| **Area perfection** | How close the area found is to a perfect one. *Certainty*: how sure the diagnosis is. *Clean aim*: how few aim misses you make with it and how straight your paths are. It never reaches 100%: missing is human. |
-| **Last map** | What the last replay showed: long or short on jumps, where your clicks land, turned jumps, aim misses, and how the area changed for the next map. |
-| **Area found** | The best area so far, and how sure it is (± mm). |
-| **Expected aim misses** | Per 1000 notes, with the area found, over the kinds of maps you play. |
-| **Rotation** | Whether your jumps come out turned and where your wrist is. The OpenTabletDriver rotation is never changed: if needed the area is moved instead. |
-| **Steadiest position** | Whether your clicks spread more on one side of the tablet. |
-| **How much it changes** | *Searching → Getting closer → Almost found → Found*: how much the best area still moves from map to map. |
-| **Filter** | What the guided filter wants for the next map (see below). |
-
-Below the panel there are charts: **expected aim misses by width**, **how close you are
-to the perfect area** (map by map), **how the area adapted** (width and height, stretch
-by stretch) and **the maps played** (one row per map: area, aim misses against the usual,
-long/short, click offset, rotation, curved lines, perfection, how the area changed next).
-
-### 5. Controls
-
-| Control | What it does |
-| --- | --- |
-| **Testing: On / Off** | Right under the area. Off (default): you always play the best area found so far, and it changes only as your replays change what's best. On: every map tries an area a little bigger or smaller than the best (by varying amounts) and, every two maps, a little moved to one side; it learns faster which width and place you're most consistent with. Switching it off puts the best area in straight away. |
-| **Pause / Resume** | Pause leaves the area found in OpenTabletDriver and stops changing it. Resume carries on from where it was. |
-| **Back to the previous area** | Puts back the area you had before the diagnosis and pauses. What it learnt is kept. |
-| **Show the current area in OpenTabletDriver** | Shown in a yellow box when the OpenTabletDriver window is open. That window keeps showing the area from when it was opened; you don't need to do anything about it (if you press Apply or Save there, the right area is put back by itself). The button reopens the window so it shows the current numbers. |
-| **Widths allowed** | Same as at the start. Changing it works the area out again and sets it straight away. |
-| **Position: Follows the hand** | Default. The area moves towards where you're steadiest and where your aim comes out straight, at most 1.5 mm per map. A constant offset of your clicks (a habit your wrist would just follow) is not chased. |
-| **Position: Hold here** | The position stays where it is now; only the size changes. Use it if the area is making you move your wrist rest. |
-| **Hold where it was** | Holds the position of the area you had before the diagnosis. |
-| **Shape** | Like the screen / Fixed (with a height/width field and **Use**) / Free. Changing it deletes nothing. |
-| **Keep the area if no aim miss (On/Off)** | On: after a map without aim misses, the next map keeps the same area. Off (default): the area found is set again after every map, because clean maps also teach something. |
-| **Size: Adapts / Fixed: only move it** | Fixed keeps the current size on every map and only decides where to put it. |
-| **How to play** | The playing tips, always at hand. |
-| **Start over** | Deletes the data collected and starts again, from the whole tablet, the area found, the previous area, or a width you type. |
-
-### 6. When is it done?
-
-There is no fixed end: it goes on as long as you play with it, refining a little each
-time. A good point to stop is when **How much it changes** says *Found* and the
-perfection has stopped climbing. The area gets close within the first few maps; the
-fine-tuning takes longer. Press **Pause**: the area found
-stays in OpenTabletDriver and becomes the suggestion on the **Area** page. Anywhere in
-the range shown there ("anywhere between X and Y mm works almost the same") is fine, so
-you can round to a size you like.
-
-## The guided filter (Radial Follow)
-
-Radial Follow is a popular smoothing filter for OpenTabletDriver, by AbstractQbit. It
-reduces pen jitter: the **inner radius** absorbs small movements of the pen, the **outer
-radius** sets how far the cursor can trail the pen, which is the delay. More smoothing
-means less jitter and more delay; the guided filter looks for the balance that works
-best for you.
-
-![The guided filter](docs/screenshots/filter.png)
-
-1. Install **AbstractQbit's Radial Follow Smoothing** from OpenTabletDriver → Plugins →
-   Plugin Manager. In Filters, use the **Tablet coordinates** version (in millimetres,
-   it stays right whatever the area).
-2. During the diagnosis, in **The filter (Radial Follow)** section, choose how much delay
-   is fine for you:
-   - **Start with lowest latency**: only values with at most 3 ms of average delay; the
-     cursor follows the pen almost at once.
-   - **Start with more smoothing**: up to 15 ms, if it helps; less jitter, a softer feel.
-3. Under **For the next map** you get the five values (Outer Radius, Inner Radius,
-   Initial Smoothing Coefficient, Soft Knee Scale, Smoothing Leak Coefficient), each with
-   a copy button. In OpenTabletDriver → Filters → Radial Follow (Tablet coordinates): tick
-   Enable, type them in and press **Apply** (Save to keep them after a restart).
-   The tag next to it turns to *"OpenTabletDriver already has these values"* when it reads
-   them. If it can't read the filters, press **I've set them**.
-4. Play the map. After the replay you get the next values. Sometimes it asks for a map
-   **without a filter** (untick Enable), to compare: that's how it knows whether the
-   filter really helps you.
-
-The guided filter **never changes the filter itself**: you always set the values. If
-OpenTabletDriver sends back an old area when you press Apply, the right area is put back
-straight away and the filter you set stays.
-
-| Control | What it does |
-| --- | --- |
-| **Latency: As low as possible / Some is fine (more smoothing)** | Switches between the two modes above at any time. |
-| **Try different values / Keep the best** | Like the area, every map tries values a little stronger or lighter than the best; *Keep the best* stops the tries. |
-| **Stop the guided filter** | Stops guiding. The filter in OpenTabletDriver stays as you set it. |
-| **Filter perfection** | Certainty (where the best is, and that it really beats no filter) times clean aim (aim misses, little jitter, clicks on time). |
-
-The table under it shows, map by map, the filter used, aim misses against the usual,
-**Shake** (how much the cursor moves on the circle right before the click), **Last
-moment** (clicks pressed just as the cursor entered the circle: too many means too much
-delay) and **Curves**.
-
-## The other pages
-
-![The Area page](docs/screenshots/area.png)
-
-- **Area**: the one area to use (from the last diagnosis, or from your replays until
-  you've done one), the values to type into OpenTabletDriver with copy buttons, and
-  **Set in OpenTabletDriver**. Links lead to *every area worked out from the replays*,
-  *aim in detail* (offset, long/short, rotation, where on the tablet you land) and
-  *error by size* (the precision model and the same maps played with different areas).
-- **Progress**: average error and aim misses session by session, with the area used in
-  each period, warm-up and how you got used to the current area.
-- **Plays**: every analysed replay; click one to see where you clicked on every note. At
-  the bottom, **Replays found but not used** lists the replays it skipped and why (mods
-  like Relax or Auto, map missing from Songs, not osu!standard…),
-  and **Where I look for them** shows the folders it watches and the time of the last
-  replay in each.
-
-  ![The Plays page](docs/screenshots/plays.png)
-
-- **Filter**: a full study of Radial Follow on all your replays (a simulation of hundreds
-  of settings). The guided filter in the diagnosis is the better way to tune it on how you
-  actually play.
+Download `AreaCoach.exe` from the Releases page and start it: there is nothing to
+install.
 
 ## Troubleshooting
 
-**A map I played doesn't show up.**
-Only replays saved after you first started Area Coach are used. Look at the bottom of
-the **Plays** page. If it isn't in *Replays found but not used*:
-osu! didn't save a replay. Remember: F2 after a fail or in multiplayer; Esc leaves no
-replay. If *Where I look for them* shows the wrong folder, set the osu! folder in
-Settings. If the time of the last replay in `Data\r` doesn't change after you pass a map
-solo, osu! isn't saving there.
-
-**"OpenTabletDriver doesn't answer."**
-Start OpenTabletDriver (version 0.6). Area Coach talks to its background driver, not to
-the window.
-
-**The area doesn't change, or the diagnosis paused saying the areas don't reach the
-tablet.** OpenTabletDriver probably has profiles for more than one tablet and the wrong
-one is being changed: pick the right one in Settings → Profile to use, then **Start
-over**. Also check that no other driver (Wacom) is using the tablet.
-
-**The diagnosis paused saying another area arrived in OpenTabletDriver.**
-An area it had never used was set in OpenTabletDriver (old areas sent back by its window
-are put right by themselves). Press **Resume**.
-
-**The area changes a little every map.**
-With **Testing** off it changes only as your replays change what's best, by small
-amounts. With Testing on, every map tries a width a little bigger or smaller than the
-best found (by varying amounts, so widths in between are played too), and every two maps
-a slightly different place: switch Testing off to always play the best area.
-
-**The window doesn't open / opens in the browser.**
-Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
-
-**Reporting a bug.**
-[Open an issue](../../issues) and attach `areacoach.log` from the data folder
-(Settings → Data → **Open the folder**).
+- **The Replay section keeps waiting.** osu! saves a replay only for maps you finish. If
+  osu! is in an unusual folder, set it in Settings.
+- **"I can't find the map"**: a map downloaded a moment ago is found once Area Coach has
+  read the Songs folder again (a few seconds); in lazer, once its files are read.
+- **Live stays on "Lining up"**: check *Keys that click* in Settings (the log shows the
+  keys it reads). Relax, Autopilot and mods that mirror or move the circles can't be
+  lined up.
+- **OpenTabletDriver doesn't answer**: start it. Without it the area is still written in
+  its file, and it takes it when it starts.
+- **The OpenTabletDriver window shows old numbers**: press *Reopen the OpenTabletDriver
+  window* after applying.
 
 ## Build from source
 
@@ -317,9 +195,6 @@ Requires Go 1.24 or newer.
 ```sh
 # Windows exe (from any OS)
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o AreaCoach.exe .
-
-# Linux (experimental: osu! under Wine, OpenTabletDriver native, X11/XWayland)
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o areacoach .
 ```
 
 Add `-X areacoach/internal/server.Version=X.Y.Z` to `-ldflags` to stamp the version.
@@ -329,33 +204,34 @@ Add `-X areacoach/internal/server.Version=X.Y.Z` to `-ldflags` to stamp the vers
 go run github.com/akavel/rsrc@latest -manifest build/app.manifest -ico build/icon.ico -o rsrc_windows_amd64.syso
 ```
 
-Run the tests with `go test ./...` (the closed-loop simulations in `internal/sim` take a
-few minutes).
+Run the tests with `go test ./...`: they include a simulated player for the Replay
+section, one for Live (with a fake OpenTabletDriver), and players of different kinds for
+the memory of the widths (one who misses more below a width, one whose hand wants a
+smaller area, one who needs a bigger one, one who always lands short), about half a
+minute in all.
 
-**Releases (optional):** pushing a tag like `v2.3.0` makes the *Release* workflow build
-`AreaCoach.exe` and attach it to the GitHub release, with its checksum.
+Pushing a tag like `v3.1.0` makes the *Release* workflow build `AreaCoach.exe` and attach
+it, with its checksum, to the GitHub release.
 
 ### Layout
 
 | Path | Contents |
 | --- | --- |
-| `internal/analysis` | Hit judging, aim measurement, the adaptive area model, turned-aim measurement, the miss model and the replay report |
-| `internal/engine` | Replay import, the map-by-map diagnosis, the guided filter, the filter study |
-| `internal/otd` | OpenTabletDriver settings and IPC |
-| `internal/osu` | Readers for beatmaps, replays, `osu!.db` and the config |
-| `internal/filter` | Radial Follow simulation, parameter search and cursor measures |
-| `internal/platform` | OS-specific code |
-| `internal/server`, `web` | Local HTTP API and the interface |
-| `internal/sim` | Closed-loop tests of the diagnosis on simulated data |
-| `internal/store` | Saved state, plays and history |
+| `internal/aim` | Judging the clicks of a play, and the search for the area |
+| `internal/live` | Following a map while it is played: presses, lining up, sounds |
+| `internal/calib` | The memory of your widths: the band, long and short, habits |
+| `internal/app` | Replays, the area in OpenTabletDriver, the Live section, settings |
+| `internal/geom` | From osu! pixels to the screen and the tablet |
+| `internal/osu` | Readers for maps, replays (stable and lazer), `osu!.db`, the settings and osu!lazer's files |
+| `internal/otd` | OpenTabletDriver settings and its connection |
+| `internal/platform` | Windows: the osu! window, cursor, keys, sound |
+| `internal/server`, `web` | The local interface |
 
 ## License and credits
 
-[MIT](LICENSE), except `internal/filter/radial.go`, a port of `RadialFollowCore` from
-[AbstractOTDPlugins](https://github.com/AbstractQbit/AbstractOTDPlugins) by AbstractQbit,
-which stays under the [MPL-2.0](https://mozilla.org/MPL/2.0/).
+[MIT](LICENSE).
 
 Written by **Claude (Opus 5.5)**, Anthropic's AI model, under the direction of the
 project author.
 
-Not affiliated with osu!, ppy, OpenTabletDriver or AbstractQbit.
+Not affiliated with osu!, ppy or OpenTabletDriver.

@@ -3,13 +3,9 @@ package otd
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -108,111 +104,5 @@ func TestWithAreaKeepsNumbers(t *testing.T) {
 	}
 	if r, ok := AreaOf(ns, "Wacom CTL-472"); !ok || r.W != 90.5 || r.Y != 40 {
 		t.Errorf("area %+v", r)
-	}
-}
-
-func TestWithRadialFollow(t *testing.T) {
-	raw := []byte(`{"Profiles":[{"Tablet":"Wacom CTL-472","AbsoluteModeSettings":{"Display":{"Width":1920,"Height":1080,"X":960,"Y":540},"Tablet":{"Width":80,"Height":45,"X":76,"Y":47.5}},
-		"Filters":[{"Path":"RadialFollow.RadialFollowScreenSpace","Enable":true,"Settings":[{"Property":"OuterRadius","Value":20}]},
-		{"Path":"RadialFollow.RadialFollowTabletSpace","Enable":false,"Settings":[{"Property":"OuterRadius","Value":1},{"Property":"SmoothingCoefficient","Value":0.95}]},
-		{"Path":"Other.Filter","Enable":true,"Settings":[{"Property":"Seed","Value":9007199254740993}]}]}]}`)
-	s, err := DecodeSettings(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ns, err := WithRadialFollow(s, "Wacom CTL-472", RadialSettings{Outer: 0.6, Inner: 0.15, Coef: 0.8, Knee: 1, Leak: 0.1}, true, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := json.Marshal(ns)
-	ps, err := Parse(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r, ok := ps.Profiles[0].Radial()
-	if !ok || !r.Tablet {
-		t.Fatalf("tablet-space Radial Follow not on: %+v %v", r, ok)
-	}
-	if math.Abs(r.Outer-0.6) > 1e-9 || math.Abs(r.Inner-0.15) > 1e-9 || r.Coef != 0.8 || r.Knee != 1 || r.Leak != 0.1 {
-		t.Fatalf("values: %+v", r)
-	}
-	n := 0
-	for _, f := range ps.Profiles[0].Filters {
-		if f.Enabled && strings.Contains(strings.ToLower(f.Path), "radialfollow") {
-			n++
-		}
-	}
-	if n != 1 {
-		t.Fatalf("%d Radial Follow on, want 1", n)
-	}
-	if !strings.Contains(string(b), "9007199254740993") {
-		t.Fatal("other values changed")
-	}
-	// off
-	ns, err = WithRadialFollow(ns, "Wacom CTL-472", RadialSettings{}, false, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ = json.Marshal(ns)
-	ps, _ = Parse(b)
-	if _, ok := ps.Profiles[0].Radial(); ok {
-		t.Fatal("still on")
-	}
-	// screen space only: radii in pixels
-	raw2 := []byte(`{"Profiles":[{"Tablet":"Wacom CTL-472","AbsoluteModeSettings":{"Tablet":{"Width":80,"Height":45,"X":76,"Y":47.5}},"Filters":[{"Path":"RadialFollow.RadialFollowScreenSpace","Enable":false,"Settings":[]}]}]}`)
-	s2, _ := DecodeSettings(raw2)
-	ns, err = WithRadialFollow(s2, "Wacom CTL-472", RadialSettings{Outer: 0.5, Coef: 0.9, Knee: 1}, true, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ = json.Marshal(ns)
-	ps, _ = Parse(b)
-	if r, ok := ps.Profiles[0].Radial(); !ok || r.Tablet || math.Abs(r.Outer-12) > 1e-9 {
-		t.Fatalf("screen space: %+v %v", r, ok)
-	}
-	// no Radial Follow at all
-	raw3 := []byte(`{"Profiles":[{"Tablet":"Wacom CTL-472","AbsoluteModeSettings":{"Tablet":{"Width":80,"Height":45,"X":76,"Y":47.5}},"Filters":[]}]}`)
-	s3, _ := DecodeSettings(raw3)
-	if _, err := WithRadialFollow(s3, "Wacom CTL-472", RadialSettings{Outer: 0.5}, true, 24); !errors.Is(err, ErrNoRadialFollow) {
-		t.Fatalf("want ErrNoRadialFollow, got %v", err)
-	}
-	if _, err := WithRadialFollow(s3, "Wacom CTL-472", RadialSettings{}, false, 24); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestAddRadialFollow(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "settings.json")
-	if RadialFollowInstalled(path) {
-		t.Fatal("no plugin folder yet")
-	}
-	pd := filepath.Join(dir, "Plugins", "AbstractQbit's Radial Follow")
-	if err := os.MkdirAll(pd, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pd, "RadialFollow.dll"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if !RadialFollowInstalled(path) {
-		t.Fatal("plugin not found")
-	}
-	raw := []byte(`{"Profiles":[{"Tablet":"Wacom CTL-472","AbsoluteModeSettings":{"Tablet":{"Width":80,"Height":45,"X":76,"Y":47.5}},"Filters":[]}]}`)
-	s, _ := DecodeSettings(raw)
-	a, err := AddRadialFollow(s, "Wacom CTL-472")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ns, err := WithRadialFollow(a, "Wacom CTL-472", RadialSettings{Outer: 0.7, Coef: 0.9, Knee: 1}, true, 24)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := json.Marshal(ns)
-	ps, _ := Parse(b)
-	if r, ok := ps.Profiles[0].Radial(); !ok || !r.Tablet || r.Outer != 0.7 {
-		t.Fatalf("%+v %v", r, ok)
-	}
-	if !strings.Contains(string(b), RadialFollowPath) {
-		t.Fatal("path missing")
 	}
 }

@@ -1,4 +1,4 @@
-//go:build !windows && !linux
+//go:build !windows
 
 // Package platform contains the operating-system specific helpers.
 package platform
@@ -25,18 +25,7 @@ func ScreenSize() (int, int) {
 }
 
 // FindOsuDir uses OSU_DIR during development.
-func FindOsuDir() string {
-	if d := os.Getenv("OSU_DIR"); d != "" {
-		return d
-	}
-	if h, err := os.UserHomeDir(); err == nil {
-		d := filepath.Join(h, ".local", "share", "osu-wine", "osu!")
-		if _, err := os.Stat(filepath.Join(d, "osu!.db")); err == nil {
-			return d
-		}
-	}
-	return ""
-}
+func FindOsuDir() string { return os.Getenv("OSU_DIR") }
 
 // ProcessDir is not implemented outside Windows.
 func ProcessDir(name string) string { return "" }
@@ -57,7 +46,22 @@ func MessageBox(title, text string, warning bool) { fmt.Fprintln(os.Stderr, titl
 func SystemLightTheme() bool { return false }
 
 // OTDWindowName is the program name of the OpenTabletDriver window.
-func OTDWindowName() string { return "OpenTabletDriver.UX.MacOS" }
+func OTDWindowName() string { return "OpenTabletDriver.UX" }
 
 // RestartProcess does nothing outside Windows.
 func RestartProcess(name string) (bool, error) { return false, nil }
+
+// OsuWindow finds nothing outside Windows.
+func OsuWindow() (Window, bool) { return Window{}, false }
+
+// CursorPos is not available outside Windows.
+func CursorPos() (int, int) { return 0, 0 }
+
+// KeyDown is not available outside Windows.
+func KeyDown(vk int) bool { return false }
+
+// FineTimer does nothing outside Windows.
+func FineTimer(on bool) {}
+
+// PlayWav does nothing outside Windows.
+func PlayWav(b []byte) {}

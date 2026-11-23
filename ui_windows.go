@@ -49,8 +49,8 @@ func showUI(url, dataDir, theme string) {
 			scale = float64(dpi) / 96
 		}
 	}
-	w := int(1320 * scale)
-	h := int(860 * scale)
+	w := int(1180 * scale)
+	h := int(820 * scale)
 	if w > sw*92/100 {
 		w = sw * 92 / 100
 	}
@@ -75,7 +75,7 @@ func showUI(url, dataDir, theme string) {
 		return
 	}
 	defer wv.Destroy()
-	wv.SetSize(int(960*scale), int(640*scale), webview2.HintMin)
+	wv.SetSize(int(820*scale), int(600*scale), webview2.HintMin)
 	if hwnd := uintptr(wv.Window()); hwnd != 0 && procDwmSetWindowAttr.Find() == nil {
 		light := theme == "light" || (theme == "" && platform.SystemLightTheme())
 		dark := int32(1)

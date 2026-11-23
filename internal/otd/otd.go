@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -68,112 +67,15 @@ func (r Rect) Same(o Rect) bool {
 
 // Profile is one tablet profile of the OTD settings.
 type Profile struct {
-	Tablet     string   `json:"tablet"`
-	OutputMode string   `json:"outputMode"`
-	Absolute   bool     `json:"absolute"`
-	Area       Rect     `json:"area"`
-	Display    Rect     `json:"display"`
-	Clipping   bool     `json:"clipping"`
-	TabletW    float64  `json:"tabletW"`
-	TabletH    float64  `json:"tabletH"`
-	SizeKnown  bool     `json:"sizeKnown"`
-	Filters    []Filter `json:"filters"`
-}
-
-// Filter is one filter plugin of a profile.
-type Filter struct {
-	Path     string             `json:"path"`
-	Name     string             `json:"name"`
-	Enabled  bool               `json:"enabled"`
-	Settings map[string]float64 `json:"settings"`
-}
-
-// RadialFollow is the configuration of AbstractQbit's Radial Follow.
-type RadialFollow struct {
-	Tablet bool    `json:"tablet"` // tablet coordinates (mm) or screen (px)
-	Outer  float64 `json:"outer"`
-	Inner  float64 `json:"inner"`
-	Coef   float64 `json:"coef"`
-	Knee   float64 `json:"knee"`
-	Leak   float64 `json:"leak"`
-}
-
-// Radial returns the enabled Radial Follow filter of the profile, if any.
-func (p Profile) Radial() (RadialFollow, bool) {
-	for _, f := range p.Filters {
-		l := strings.ToLower(f.Path)
-		if !f.Enabled || !strings.Contains(l, "radialfollow") {
-			continue
-		}
-		g := func(k string, def float64) float64 {
-			if v, ok := f.Settings[k]; ok {
-				return v
-			}
-			return def
-		}
-		r := RadialFollow{Tablet: strings.Contains(l, "tabletspace"), Inner: g("InnerRadius", 0), Coef: g("SmoothingCoefficient", 0.95),
-			Knee: g("SoftKneeScale", 1), Leak: g("SmoothingLeakCoefficient", 0)}
-		if r.Tablet {
-			r.Outer = g("OuterRadius", 1)
-		} else {
-			r.Outer = g("OuterRadius", 5)
-		}
-		return r, true
-	}
-	return RadialFollow{}, false
-}
-
-// HasRadial tells whether the profile has a Radial Follow filter, on or
-// off.
-func (p Profile) HasRadial() bool {
-	for _, f := range p.Filters {
-		if strings.Contains(strings.ToLower(f.Path), "radialfollow") {
-			return true
-		}
-	}
-	return false
-}
-
-// RadialIn reads the Radial Follow of the tablet's profile in live settings
-// (as the daemon gives them): the one on, if any, and whether the profile
-// was found at all.
-func RadialIn(s map[string]any, tablet string) (r RadialFollow, on, found bool, p Profile) {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return
-	}
-	st, err := Parse(b)
-	if err != nil {
-		return
-	}
-	p, found = st.Best(tablet)
-	if !found {
-		return
-	}
-	r, on = p.Radial()
-	return
-}
-
-// SmoothingSignature describes the enabled smoothing filters, so that a
-// change of filter settings can be told apart in the data ("" if none).
-func (p Profile) SmoothingSignature() string {
-	var parts []string
-	for _, f := range p.Filters {
-		if !f.Enabled {
-			continue
-		}
-		keys := make([]string, 0, len(f.Settings))
-		for k := range f.Settings {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		var kv []string
-		for _, k := range keys {
-			kv = append(kv, fmt.Sprintf("%s=%g", k, f.Settings[k]))
-		}
-		parts = append(parts, f.Name+"("+strings.Join(kv, ",")+")")
-	}
-	return strings.Join(parts, "+")
+	Tablet     string  `json:"tablet"`
+	OutputMode string  `json:"outputMode"`
+	Absolute   bool    `json:"absolute"`
+	Area       Rect    `json:"area"`
+	Display    Rect    `json:"display"`
+	Clipping   bool    `json:"clipping"`
+	TabletW    float64 `json:"tabletW"`
+	TabletH    float64 `json:"tabletH"`
+	SizeKnown  bool    `json:"sizeKnown"`
 }
 
 // Settings is the parsed settings.json.
@@ -255,7 +157,6 @@ func Parse(b []byte) (*Settings, error) {
 				prof.Area = rect(am["Tablet"])
 				prof.Clipping = boolean(am["EnableClipping"], true)
 			}
-			prof.Filters = filters(pm["Filters"])
 			prof.Absolute = isAbsolute(prof.OutputMode)
 			finish(&prof)
 			s.Profiles = append(s.Profiles, prof)
@@ -275,7 +176,6 @@ func Parse(b []byte) (*Settings, error) {
 			Rot: numAny(root, "TabletRotation", "Rotation")}
 		prof.Clipping = boolean(root["EnableClipping"], true)
 		prof.Absolute = isAbsolute(prof.OutputMode)
-		prof.Filters = filters(root["Filters"])
 		finish(&prof)
 		if prof.Area.Valid() {
 			s.Profiles = append(s.Profiles, prof)
@@ -324,38 +224,6 @@ func (s *Settings) Best(preferred string) (Profile, bool) {
 	return Profile{}, false
 }
 
-func filters(v any) []Filter {
-	list, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	var out []Filter
-	for _, it := range list {
-		m, ok := it.(map[string]any)
-		if !ok {
-			continue
-		}
-		f := Filter{Path: str(m["Path"]), Enabled: boolean(m["Enable"], true), Settings: map[string]float64{}}
-		f.Name = f.Path
-		if i := strings.LastIndex(f.Name, "."); i >= 0 {
-			f.Name = f.Name[i+1:]
-		}
-		if ss, ok := m["Settings"].([]any); ok {
-			for _, x := range ss {
-				if sm, ok := x.(map[string]any); ok {
-					if k := str(sm["Property"]); k != "" {
-						f.Settings[k] = num(sm["Value"])
-					}
-				}
-			}
-		}
-		if f.Path != "" {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
 func rect(v any) Rect {
 	m, ok := v.(map[string]any)
 	if !ok {
@@ -373,6 +241,11 @@ func num(v any) float64 {
 	switch x := v.(type) {
 	case float64:
 		return x
+	case bool:
+		if x {
+			return 1
+		}
+		return 0
 	case json.Number:
 		f, _ := x.Float64()
 		return f
