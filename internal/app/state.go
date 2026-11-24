@@ -1,6 +1,8 @@
 package app
 
 import (
+	"time"
+
 	"areacoach/internal/calib"
 	"areacoach/internal/otd"
 )
@@ -10,7 +12,6 @@ type State struct {
 	Version   string    `json:"version"`
 	Settings  Settings  `json:"settings"`
 	Area      *otd.Rect `json:"area"`
-	AreaSrc   string    `json:"areaSrc"`
 	AreaErr   string    `json:"areaErr,omitempty"`
 	Undo      *otd.Rect `json:"undo,omitempty"`
 	Note      string    `json:"note,omitempty"` // about the last area set
@@ -34,6 +35,8 @@ type State struct {
 	// the area that went best so far, and how sure that is (0-1)
 	Best        *otd.Rect `json:"best,omitempty"`
 	Reliability float64   `json:"reliability"`
+	// the reliability went down lately: from how much (0 when it didn't)
+	RelDown float64 `json:"relDown,omitempty"`
 }
 
 // State returns the state for the interface.
@@ -45,9 +48,13 @@ func (a *App) State() State {
 		mem = &m
 	}
 	best, rel, hasBest := a.BestArea()
+	down := 0.0
+	if mem != nil {
+		down = a.relDrop(rel)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	s := State{Version: a.version, Settings: a.set, AreaSrc: a.areaSrc, AreaErr: a.areaErr, OsuDir: a.env.OsuDir,
+	s := State{Version: a.version, Settings: a.set, AreaErr: a.areaErr, OsuDir: a.env.OsuDir,
 		LazerData: a.env.LazerData, OTDPath: a.env.OTDPath, Problems: append([]string{}, a.env.Problems...),
 		Report: a.report, ReplayMsg: a.replayMsg, Note: a.note, Busy: a.busy, Live: live, LazerScan: 1}
 	if a.areaOK {
@@ -76,6 +83,7 @@ func (a *App) State() State {
 	s.Memory = mem
 	if mem != nil {
 		s.Reliability = rel
+		s.RelDown = down
 	}
 	if hasBest {
 		s.Best = &best
@@ -84,4 +92,32 @@ func (a *App) State() State {
 		s.Problems = []string{}
 	}
 	return s
+}
+
+// relDrop follows the reliability: when it falls 10 points or more below the
+// highest seen lately, it says from how much, for a quarter of an hour.
+func (a *App) relDrop(rel float64) float64 {
+	key := ""
+	if r, ok := a.current(); ok {
+		key = a.memKey(r)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if key != a.relKey {
+		a.relKey, a.relHigh, a.relDownAt = key, rel, time.Time{}
+	}
+	switch {
+	case rel >= a.relHigh:
+		a.relHigh, a.relDownAt = rel, time.Time{}
+	case a.relHigh-rel >= 0.1 && a.relDownAt.IsZero():
+		a.relDownAt = time.Now()
+	}
+	if a.relDownAt.IsZero() {
+		return 0
+	}
+	if time.Since(a.relDownAt) > 15*time.Minute {
+		a.relHigh, a.relDownAt = rel, time.Time{}
+		return 0
+	}
+	return a.relHigh
 }

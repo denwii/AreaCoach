@@ -19,27 +19,27 @@ type areaMark struct {
 
 // readArea reads the area in use: from OpenTabletDriver when it runs (what
 // is really applied), otherwise from its settings file.
-func readArea(tablet, path string) (otd.Rect, string, error) {
+func readArea(tablet, path string) (otd.Rect, error) {
 	if d, err := otd.DialDaemon(1500 * time.Millisecond); err == nil {
 		s, err := d.GetSettings()
 		d.Close()
 		if err == nil {
 			if r, ok := otd.AreaOf(s, tablet); ok {
-				return r, "live", nil
+				return r, nil
 			}
 		}
 	}
 	if path == "" {
-		return otd.Rect{}, "", errors.New("OpenTabletDriver not found")
+		return otd.Rect{}, errors.New("OpenTabletDriver not found")
 	}
 	st, err := otd.Load(path)
 	if err != nil {
-		return otd.Rect{}, "", err
+		return otd.Rect{}, err
 	}
 	if p, ok := st.Best(tablet); ok {
-		return p.Area, "file", nil
+		return p.Area, nil
 	}
-	return otd.Rect{}, "", errors.New("no tablet profile in the OpenTabletDriver settings")
+	return otd.Rect{}, errors.New("no tablet profile in the OpenTabletDriver settings")
 }
 
 // setLiveArea changes the area in OpenTabletDriver now (not saved).

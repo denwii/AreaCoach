@@ -52,13 +52,6 @@ func NewIndex(osuDir, songsDir, cachePath string) *Index {
 	return ix
 }
 
-// Count returns how many maps are known.
-func (ix *Index) Count() int {
-	ix.mu.RLock()
-	defer ix.mu.RUnlock()
-	return len(ix.byMD5)
-}
-
 // Refresh reloads osu!.db if it changed. Returns an error only if the
 // database exists but cannot be parsed.
 func (ix *Index) Refresh() error {

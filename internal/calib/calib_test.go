@@ -150,6 +150,7 @@ type run struct {
 	last, lowest, highest float64 // width at the end (average of the last blocks), lowest, highest
 	changes, clicks       int
 	rep                   Report
+	rels                  []float64 // reliability after every stretch
 }
 
 // sculpt plays the live calibration the way the program does: stretches of
@@ -182,6 +183,7 @@ func sculpt(t *testing.T, p player, start float64, blocks int, seed int64, explo
 		out.clicks += len(cs)
 		s.Add("k", day, fmt.Sprint(b), cs)
 		r := s.Analyze("k", day)
+		out.rels = append(out.rels, r.Reliability)
 		base := w
 		if plan.WasProbe {
 			base = pre
@@ -446,5 +448,62 @@ func TestProbeAndHold(t *testing.T) {
 	}
 	if d := r.Next(90.5, 90.6, 0.3, Plan{}); !d.Hold || d.Width != 90.5 {
 		t.Fatalf("a change within the noise should hold: %+v", d)
+	}
+}
+
+// The reliability grows as you play and doesn't collapse when the best is
+// near where you play: a width with few clicks, or the best moving among
+// widths about as good, moves it only a little.
+func TestReliabilityDoesNotCollapse(t *testing.T) {
+	players := map[string]player{
+		"misses more below 87": {land: func(w float64) float64 { return 0.5 * (84 - w) / w }, spread: func(w float64) float64 { return 0.3 * (1 + 0.2*math.Max(0, 87-w)) }},
+		"small area":           {land: func(w float64) float64 { return 0.5 * (62 - w) / w }, spread: func(w float64) float64 { return 0.3 * (1 + 0.25*math.Max(0, 64-w)) }},
+		"all widths alike":     {land: func(w float64) float64 { return 0.5 * (89 - w) / w }, spread: func(float64) float64 { return 0.3 }},
+	}
+	for name, p := range players {
+		start := 92.0
+		if name == "small area" {
+			start = 67
+		}
+		for _, seed := range []int64{26, 52} {
+			r := sculpt(t, p, start, 120, seed, true)
+			drop, reached := 0.0, -1
+			for i := 1; i < len(r.rels); i++ {
+				if r.rels[i-1] >= 0.4 {
+					drop = math.Max(drop, r.rels[i-1]-r.rels[i])
+				}
+				if reached < 0 && r.rels[i] >= Reliable {
+					reached = i
+				}
+			}
+			t.Logf("%s seed %d: reliable after %d stretches, biggest drop %.2f, final %.2f", name, seed, reached, drop, r.rep.Reliability)
+			if reached < 0 || reached > 60 || drop > 0.2 || r.rep.Reliability < Reliable {
+				t.Fatalf("%s seed %d: reliable after %d stretches, biggest drop %.2f, final %.2f", name, seed, reached, drop, r.rep.Reliability)
+			}
+		}
+	}
+}
+
+func TestKeyForKeepsOneMemoryPerShape(t *testing.T) {
+	s := newStore(t)
+	rng := rand.New(rand.NewSource(14))
+	p := player{land: func(float64) float64 { return 0 }, spread: func(float64) float64 { return 0.3 }}
+	k := s.KeyFor("T", 0.625)
+	s.Add(k, day0, "a", p.clicks(rng, 90.5, 10))
+	for _, ratio := range []float64{0.62499, 0.62501, 0.6262} {
+		if got := s.KeyFor("T", ratio); got != k {
+			t.Fatalf("ratio %v: %q, want %q", ratio, got, k)
+		}
+	}
+	if got := s.KeyFor("T", 0.5625); got == k {
+		t.Fatal("another shape shares the memory")
+	}
+	if got := s.KeyFor("U", 0.625); got == k {
+		t.Fatal("another tablet shares the memory")
+	}
+	// the memories of version 3.1 and 3.2 (two decimals) are found too
+	s.Add("T|0.56", day0, "b", p.clicks(rng, 90.5, 10))
+	if got := s.KeyFor("T", 0.5625); got != "T|0.56" {
+		t.Fatalf("old memory not found: %q", got)
 	}
 }

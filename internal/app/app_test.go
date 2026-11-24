@@ -291,3 +291,15 @@ func TestBestAreaAndUseIt(t *testing.T) {
 		t.Fatalf("settings.json has %+v, want %+v", got, *st.Best)
 	}
 }
+
+func TestReliabilityDropIsExplained(t *testing.T) {
+	a := New(t.TempDir(), "test")
+	a.mu.Lock()
+	a.noteAreaLocked(otd.Rect{W: 80, H: 45, X: 76, Y: 47.5})
+	a.mu.Unlock()
+	for _, c := range []struct{ rel, want float64 }{{0.5, 0}, {0.9, 0}, {0.85, 0}, {0.5, 0.9}, {0.6, 0.9}, {0.95, 0}} {
+		if got := a.relDrop(c.rel); got != c.want {
+			t.Fatalf("reliability %.2f: drop from %.2f, want %.2f", c.rel, got, c.want)
+		}
+	}
+}

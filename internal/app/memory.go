@@ -23,7 +23,7 @@ func (a *App) memKey(r otd.Rect) string {
 	if r.W <= 0 {
 		return ""
 	}
-	return calib.Key(tablet, r.H/r.W)
+	return a.mem.KeyFor(tablet, r.H/r.W)
 }
 
 // remember adds clicks of the play src, each with the area it was played
@@ -81,9 +81,9 @@ func (a *App) Forget() {
 }
 
 // BestArea is the area that went best so far, for the area in use: the
-// width where you missed the least (where several widths are about as good,
-// the one in use), where the area went best on the tablet, and how sure
-// that is (0-1).
+// width where you press closest to the centres (where several widths are
+// about as good, the one in use), where the area went best on the tablet,
+// and how sure that is (0-1).
 func (a *App) BestArea() (otd.Rect, float64, bool) {
 	cur, ok := a.current()
 	if !ok {

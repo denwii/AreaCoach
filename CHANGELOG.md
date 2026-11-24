@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.3.0
+
+- **Closest to the centres, not fewest misses.** Live now judges each width by how far
+  from the centre of the circles you press, compared on notes alike. A press far off
+  counts as one and a half radii, no more: missing a lot on a hard map is normal and no
+  longer outweighs everything else. Every click says something, so it learns faster.
+- **The best width moves smoothly.** It is the lowest point of a curve through the widths
+  around it, not the single best millimetre, so it no longer jumps between widths that go
+  about as well.
+- **A steadier reliability.** It no longer falls from 90% to 30-40% when the best slides
+  inside your band, or when a width with few clicks looks good by chance: widths about as
+  good as the best count as good, and the clicks across the whole band count. If it does
+  go down by 10 points or more, a note says why and that Live is checking it.
+- Trying nearby widths: first a side with no data yet, then where the best might still
+  be; widths already well measured aren't tried again.
+- **Your widths** shows "Off centre vs the best"; differences too small to tell apart
+  show as "same". A width is marked "further off" only when its own clicks say so too.
+- The memory from 3.1 and 3.2 is kept: its clicks and how you land on jumps still count;
+  the distance from the centres builds up from the new clicks.
+
 ## 3.2.0
 
 - **Stretches instead of constant changes.** Live now changes the area after a stretch

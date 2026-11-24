@@ -67,7 +67,6 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacin
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { filter: brightness(1.08); }
-.btn.danger { color: var(--bad); }
 .btn:disabled { opacity: .55; cursor: default; filter: none; }
 .btns { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 18px; }
 

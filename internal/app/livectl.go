@@ -291,7 +291,7 @@ func (l *liveCtl) run(stop, done chan struct{}) {
 				a.mu.Unlock()
 				if err := setLiveArea(tablet, preProbe); err == nil {
 					a.mu.Lock()
-					a.noteAreaLocked(preProbe, "live")
+					a.noteAreaLocked(preProbe)
 					a.mu.Unlock()
 					stepped = true
 					log.Printf("live: off while trying %.2f mm: back to %.2f x %.3f", cur.W, preProbe.W, preProbe.H)
@@ -492,7 +492,7 @@ func (l *liveCtl) step(pool []aim.Sample, cur otd.Rect, plan *calib.Plan, pre *o
 		return false
 	}
 	a.mu.Lock()
-	a.noteAreaLocked(next, "live")
+	a.noteAreaLocked(next)
 	a.mu.Unlock()
 	if set.Sound {
 		switch {

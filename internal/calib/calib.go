@@ -1,8 +1,8 @@
 // Package calib remembers how you play at each width of the area, across
 // days, and from that finds the band of widths that suit you: where you
-// land neither short nor long, and where you miss the fewest notes,
-// compared on notes alike. The live calibration moves freely inside the
-// band; its edges are elastic.
+// land neither short nor long, and where you press closest to the centres
+// of the circles, compared on notes alike. The live calibration moves
+// freely inside the band; its edges are elastic.
 package calib
 
 import (
@@ -52,25 +52,25 @@ const (
 	binMM     = 0.5  // widths are kept in steps of half a millimetre
 	halfLife  = 10.0 // days after which a day counts half
 	keepDays  = 60
-	softTau   = 0.2 // how softly a miss is counted (see soft)
+	offCap    = 1.5 // a press counts at most this far from the centre (radii)
 	classes   = 17
 	jumpMin   = 2.0  // a jump, for long and short: at least two radii
 	validN    = 60   // clicks around a width it needs to be judged
 	wallN     = 150  // and to stop the area
 	smoothMM  = 2.5  // widths this close help judge each other
 	minPlays  = 2.5  // plays around a width it needs to be judged (one map can be just easy)
-	ownSE     = 0.06 // a width this well measured is judged on its own
+	ownSE     = 0.03 // a width this well measured is judged on its own
 	probeN    = 600  // clicks a nearby width needs before it stops trying it
 	bandFirst = 300  // clicks before there is a band
 )
 
-// soft counts a press as a miss softly: fully far out, half on the edge,
-// a little when close to it; so that every press says something, not only
-// the misses (they are few, and would need thousands of clicks).
-func soft(x float64) float64 { return 1 / (1 + math.Exp(-(x-1)/softTau)) }
+// off is how far a press counts from the centre of its circle, in radii:
+// the distance, up to offCap (a press further away is a miss, and counts
+// as one: misses on a hard map don't outweigh everything else).
+func off(x float64) float64 { return math.Min(x, offCap) }
 
 // class sorts the notes alike: by how far the jump is (in radii) and how
-// much time there is for it. Misses are compared within a class.
+// much time there is for it. Presses are compared within a class.
 func class(c Click) int {
 	if c.Gap <= 0 || c.Radius <= 0 {
 		return classes - 1
@@ -100,8 +100,9 @@ func class(c Click) int {
 // agg are the sums of the clicks of one width, one class, one day.
 type agg struct {
 	N    float64 `json:"n"`
-	Q    float64 `json:"q"`  // soft misses
-	Q2   float64 `json:"q2"` // their squares
+	CN   float64 `json:"cn"` // clicks counted for the distance from the centre
+	C    float64 `json:"c"`  // Σ distance from the centre (see off)
+	C2   float64 `json:"c2"` // Σ its square
 	Miss float64 `json:"m"`  // misses
 	KN   float64 `json:"kn"` // jumps
 	EL   float64 `json:"el"` // Σ error along the jump × its length
@@ -111,10 +112,11 @@ type agg struct {
 
 func (g *agg) add(c Click) {
 	w := c.Weight
-	q := soft(c.Dist)
+	v := off(c.Dist)
 	g.N += w
-	g.Q += w * q
-	g.Q2 += w * q * q
+	g.CN += w
+	g.C += w * v
+	g.C2 += w * v * v
 	if c.Dist > 1 {
 		g.Miss += w
 	}
@@ -175,7 +177,29 @@ type Store struct {
 
 // Key names the memory of a tablet and a shape of area (height / width).
 func Key(tablet string, ratio float64) string {
-	return fmt.Sprintf("%s|%.2f", tablet, ratio)
+	return fmt.Sprintf("%s|%.4f", tablet, ratio)
+}
+
+// KeyFor is the memory of a tablet and a shape: the one already kept for
+// that tablet with the closest shape (within 0.003, so that rounding never
+// splits a memory in two), or a new one.
+func (s *Store) KeyFor(tablet string, ratio float64) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	best, bd := "", 0.003
+	for k := range s.mem {
+		t, r, ok := strings.Cut(k, "|")
+		if !ok || t != tablet {
+			continue
+		}
+		if v, err := strconv.ParseFloat(r, 64); err == nil && math.Abs(v-ratio) <= bd {
+			best, bd = k, math.Abs(v-ratio)
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return Key(tablet, ratio)
 }
 
 // Open reads the memories from path (none if it does not exist).
@@ -327,11 +351,17 @@ type Width struct {
 	W      float64 `json:"w"`      // from W to W+1 mm
 	Clicks float64 `json:"clicks"` // counted (old days count less)
 	Plays  float64 `json:"plays"`  // maps played at this width
-	Miss   float64 `json:"miss"`   // misses compared with your average on notes alike (1 = average), from this width and its neighbours
-	MissSE float64 `json:"missSE"`
-	Own    float64 `json:"own"`  // from this width alone
-	Raw    float64 `json:"raw"`  // share of the presses outside the circle
-	Land   float64 `json:"land"` // along the jumps: + long, - short (share of the jump)
+	// how far from the centre of the circles you press, compared with your
+	// average on notes alike (1 = average, lower is better), from this width
+	// and its neighbours
+	Off   float64 `json:"off"`
+	OffSE float64 `json:"offSE"`
+	Own   float64 `json:"own"` // from this width alone
+	OwnSE float64 `json:"ownSE"`
+	Dist  float64 `json:"dist"` // average distance from the centre, in radii (not compared)
+	Raw   float64 `json:"raw"`  // share of the presses outside the circle
+	// along the jumps: + long, - short (share of the jump)
+	Land   float64 `json:"land"`
 	LandSE float64 `json:"landSE"`
 	Jumps  float64 `json:"jumps"`
 	Band   bool    `json:"band"` // in the band
@@ -346,8 +376,8 @@ type Report struct {
 	HasBand bool    `json:"hasBand"`
 	BandLo  float64 `json:"bandLo"`
 	BandHi  float64 `json:"bandHi"`
-	// the width that goes best (centre of its millimetre), and how sure
-	// that is (0-1: grows with the clicks around it and on both sides)
+	// the width where you press closest to the centres, and how sure that
+	// is (0-1: it grows with the clicks around it and on both sides)
 	HasBest     bool    `json:"hasBest"`
 	Best        float64 `json:"best"`
 	Reliability float64 `json:"reliability"`
@@ -365,10 +395,12 @@ type Report struct {
 	// it follows you, it is how you aim
 	Habit   bool    `json:"habit"`
 	HabitK  float64 `json:"habitK"`
-	slope   float64 // misses against width (per mm), and its uncertainty
+	slope   float64 // distance from the centre against width (per mm), and its uncertainty
 	slopeSE float64
-	doubt   float64 // the width that most often came out clearly better than the best
-	doubtP  float64 // and how often
+	// where the best could still be: the side (-1, +1) and how often it
+	// came out more than a millimetre that way
+	unsureSide  int
+	unsureShare float64
 }
 
 // Analyze reads the memory of key as of now.
@@ -433,29 +465,34 @@ func (s *Store) Analyze(key string, now time.Time) Report {
 	if m.PosX != 0 || m.PosY != 0 {
 		r.HasPos, r.PosX, r.PosY = true, m.PosX, m.PosY
 	}
-	// your average on each kind of note, at every width
-	var cn, cq [classes]float64
-	var tn, tq float64
+	// your average distance from the centre on each kind of note, at every
+	// width
+	var cn, cc [classes]float64
+	var tn, tc, all float64
 	for _, c := range cells {
-		cn[c.cls] += c.w * c.g.N
-		cq[c.cls] += c.w * c.g.Q
-		tn += c.w * c.g.N
-		tq += c.w * c.g.Q
+		all += c.w * c.g.N
+		cn[c.cls] += c.w * c.g.CN
+		cc[c.cls] += c.w * c.g.C
+		tn += c.w * c.g.CN
+		tc += c.w * c.g.C
 	}
-	if tn == 0 {
+	if all == 0 {
 		return r
 	}
-	r.Clicks = tn
+	r.Clicks = all
 	base := func(cls int) float64 {
-		if cn[cls] < 20 {
-			return math.Max(tq/tn, 1e-3)
+		if cn[cls] < 20 || tn == 0 {
+			if tn == 0 {
+				return 1
+			}
+			return math.Max(tc/tn, 1e-3)
 		}
-		return math.Max(cq[cls]/cn[cls], 1e-3)
+		return math.Max(cc[cls]/cn[cls], 1e-3)
 	}
 	// each millimetre of width
 	type acc struct {
-		n, q, exp, vq, miss float64
-		kn, el, e2, l2      float64
+		n, cn, c, exp, vc, miss float64
+		kn, el, e2, l2          float64
 	}
 	byMM := map[int]*acc{}
 	for _, c := range cells {
@@ -467,10 +504,11 @@ func (s *Store) Analyze(key string, now time.Time) Report {
 		}
 		g, w := c.g, c.w
 		a.n += w * g.N
-		a.q += w * g.Q
-		a.exp += w * g.N * base(c.cls)
-		if g.N > 0 {
-			a.vq += w * w * math.Max(0, g.Q2-g.Q*g.Q/g.N)
+		a.cn += w * g.CN
+		a.c += w * g.C
+		a.exp += w * g.CN * base(c.cls)
+		if g.CN > 0 {
+			a.vc += w * w * math.Max(0, g.C2-g.C*g.C/g.CN)
 		}
 		a.miss += w * g.Miss
 		a.kn += w * g.KN
@@ -486,9 +524,10 @@ func (s *Store) Analyze(key string, now time.Time) Report {
 	for _, mm := range mms {
 		a := byMM[mm]
 		wd := Width{W: float64(mm), Clicks: a.n, Jumps: a.kn, Plays: playsAt[mm]}
-		if a.exp > 0 {
-			wd.Own = a.q / a.exp
-			wd.MissSE = math.Sqrt(a.vq) / a.exp
+		if a.exp > 0 && a.cn > 0 {
+			wd.Own = a.c / a.exp
+			wd.OffSE = math.Sqrt(a.vc) / a.exp
+			wd.Dist = a.c / a.cn
 		}
 		if a.n > 0 {
 			wd.Raw = a.miss / a.n
@@ -511,62 +550,53 @@ func (s *Store) Analyze(key string, now time.Time) Report {
 
 // smooth judges each width with its neighbours too: a straight line through
 // the widths around it (the closer, the more they count), so that a few
-// dozen clicks per millimetre are enough to see the misses grow.
+// dozen clicks per millimetre are enough. A width measured well enough on
+// its own is judged on its own (neighbours would blur where it starts to
+// go worse).
 func (r *Report) smooth() {
 	type pt struct{ x, y, v float64 }
 	var pts []pt
 	for _, w := range r.Widths {
-		if w.Clicks >= 15 && w.MissSE > 0 {
-			pts = append(pts, pt{w.W + 0.5, w.Own, w.MissSE * w.MissSE})
+		if w.Clicks >= 15 && w.OffSE > 0 {
+			pts = append(pts, pt{w.W + 0.5, w.Own, w.OffSE * w.OffSE})
 		}
 	}
 	for i := range r.Widths {
 		w := &r.Widths[i]
-		w.Miss, w.MissSE = w.Own, 0
-		if w.Clicks < 15 {
+		own := w.OffSE
+		w.OwnSE = own
+		w.Off, w.OffSE = w.Own, 0
+		if w.Clicks < 15 || own <= 0 {
+			continue
+		}
+		if own <= ownSE {
+			w.OffSE = own
 			continue
 		}
 		x0 := w.W + 0.5
 		var s0, s1, s2 float64
-		var us []float64
-		for _, p := range pts {
+		us := make([]float64, len(pts))
+		for j, p := range pts {
 			d := (p.x - x0) / smoothMM
-			k := math.Max(0, 1-d*d)
-			u := k / p.v
-			us = append(us, u)
+			u := math.Max(0, 1-d*d) / p.v
+			us[j] = u
 			s0 += u
 			s1 += u * (p.x - x0)
 			s2 += u * (p.x - x0) * (p.x - x0)
 		}
 		det := s0*s2 - s1*s1
 		var est, vr float64
-		if det > 1e-9*s0*s0 {
-			// local line: the weight of each point in the value at x0
-			for j, p := range pts {
-				l := us[j] * (s2 - s1*(p.x-x0)) / det
-				est += l * p.y
-				vr += l * l * p.v
+		for j, p := range pts {
+			var l float64
+			if det > 1e-9*s0*s0 {
+				l = us[j] * (s2 - s1*(p.x-x0)) / det // local line
+			} else {
+				l = us[j] / s0
 			}
-		} else if s0 > 0 {
-			for j, p := range pts {
-				l := us[j] / s0
-				est += l * p.y
-				vr += l * l * p.v
-			}
-		} else {
-			continue
+			est += l * p.y
+			vr += l * l * p.v
 		}
-		w.Miss, w.MissSE = math.Max(0, est), math.Sqrt(vr)
-	}
-	// a width measured well enough on its own needs no neighbours (they
-	// would blur where the misses start to grow)
-	for i := range r.Widths {
-		w := &r.Widths[i]
-		for _, p := range pts {
-			if p.x == w.W+0.5 && w.Own > 0 && math.Sqrt(p.v) <= ownSE {
-				w.Miss, w.MissSE = w.Own, math.Sqrt(p.v)
-			}
-		}
+		w.Off, w.OffSE = math.Max(0, est), math.Sqrt(vr)
 	}
 }
 
@@ -592,12 +622,68 @@ func (r *Report) support(i int, d float64) float64 {
 	return n
 }
 
-// band finds the widths that go about as well as the best one, next to it.
+// parabola fits off = a + b·x + c·x² to the points (weights 1/v), x
+// measured from x0.
+func parabola(xs, ys, vs []float64, x0 float64) (a, b, c float64, ok bool) {
+	var m [3][4]float64
+	for i := range xs {
+		x, wt := xs[i]-x0, 1/vs[i]
+		p := [3]float64{1, x, x * x}
+		for r := 0; r < 3; r++ {
+			for k := 0; k < 3; k++ {
+				m[r][k] += wt * p[r] * p[k]
+			}
+			m[r][3] += wt * p[r] * ys[i]
+		}
+	}
+	// Gauss-Jordan
+	for col := 0; col < 3; col++ {
+		piv := col
+		for r := col + 1; r < 3; r++ {
+			if math.Abs(m[r][col]) > math.Abs(m[piv][col]) {
+				piv = r
+			}
+		}
+		if math.Abs(m[piv][col]) < 1e-12 {
+			return 0, 0, 0, false
+		}
+		m[col], m[piv] = m[piv], m[col]
+		for r := 0; r < 3; r++ {
+			if r == col {
+				continue
+			}
+			f := m[r][col] / m[col][col]
+			for k := col; k < 4; k++ {
+				m[r][k] -= f * m[col][k]
+			}
+		}
+	}
+	return m[0][3] / m[0][0], m[1][3] / m[1][1], m[2][3] / m[2][2], true
+}
+
+// curveMin is where a parabola is lowest between lo and hi (x measured
+// from x0), and its value there.
+func curveMin(a, b, c, x0, lo, hi float64) (float64, float64) {
+	f := func(x float64) float64 { d := x - x0; return a + b*d + c*d*d }
+	x := lo
+	if f(hi) < f(x) {
+		x = hi
+	}
+	if c > 0 {
+		if v := x0 - b/(2*c); v > lo && v < hi && f(v) < f(x) {
+			x = v
+		}
+	}
+	return x, f(x)
+}
+
+// band finds the width where you press closest to the centres, and the
+// widths that go about as well, next to it.
 func (r *Report) band() {
 	r.smooth()
 	judged := func(i int) bool {
 		w := r.Widths[i]
-		return w.Clicks >= 15 && w.MissSE > 0 && r.support(i, 1) >= validN && r.plays(i, 1) >= minPlays
+		return w.Clicks >= 15 && w.OffSE > 0 && r.support(i, 1) >= validN && r.plays(i, 1) >= minPlays
 	}
 	var valid []int
 	for i := range r.Widths {
@@ -605,18 +691,18 @@ func (r *Report) band() {
 			valid = append(valid, i)
 		}
 	}
-	// misses against width: which way it gets worse
+	// distance from the centre against width: which way it gets worse
 	if len(valid) >= 2 {
 		var sw, sx, sy, sxx, sxy float64
 		for _, i := range valid {
 			w := r.Widths[i]
-			wt := 1 / (w.MissSE * w.MissSE)
+			wt := 1 / (w.OffSE * w.OffSE)
 			x := w.W + 0.5
 			sw += wt
 			sx += wt * x
-			sy += wt * w.Miss
+			sy += wt * w.Off
 			sxx += wt * x * x
-			sxy += wt * x * w.Miss
+			sxy += wt * x * w.Off
 		}
 		if d := sw*sxx - sx*sx; d > 0 {
 			r.slope = (sw*sxy - sx*sy) / d
@@ -627,29 +713,32 @@ func (r *Report) band() {
 		r.reliability(nil)
 		return
 	}
-	best := valid[0]
-	for _, i := range valid {
-		w, b := r.Widths[i], r.Widths[best]
-		if w.Miss+w.MissSE < b.Miss+b.MissSE {
-			best = i
-		}
-	}
-	b := r.Widths[best]
-	r.HasBest, r.Best = true, b.W+0.5
-	r.reliability(valid)
+	r.best(valid)
+	defer r.reliability(valid)
 	if r.Clicks < bandFirst || len(valid) < 2 {
 		return
 	}
+	bi := -1
+	for _, i := range valid {
+		if bi < 0 || math.Abs(r.Widths[i].W+0.5-r.Best) < math.Abs(r.Widths[bi].W+0.5-r.Best) {
+			bi = i
+		}
+	}
+	b := r.Widths[bi]
 	near := func(i int) bool {
 		w := r.Widths[i]
-		return w.Miss <= b.Miss+math.Max(0.06, 2*math.Hypot(w.MissSE, b.MissSE))
+		return w.Off <= b.Off+math.Max(0.04*b.Off, 2*math.Hypot(w.OffSE, b.OffSE))
 	}
+	// a width goes worse when it does with its neighbours and on its own
+	// too (not only because the line through its neighbours says so)
 	for _, i := range valid {
-		if !near(i) && r.support(i, 1) >= wallN && r.plays(i, 1) >= 2*minPlays {
+		w := r.Widths[i]
+		ownWorse := w.Own-b.Off > math.Max(0.04*b.Off, math.Hypot(w.OwnSE, b.OffSE))
+		if !near(i) && ownWorse && r.support(i, 1) >= wallN && r.plays(i, 1) >= 2*minPlays {
 			r.Widths[i].Worse = true
 		}
 	}
-	r.Widths[best].Band = true
+	r.Widths[bi].Band = true
 	r.HasBand = true
 	// grow the band from the best width, over gaps of at most 2 mm without
 	// data, up to a width that goes worse
@@ -659,7 +748,7 @@ func (r *Report) band() {
 			edge = b.W + 1
 		}
 		last := b.W
-		for i := best + dir; i >= 0 && i < len(r.Widths); i += dir {
+		for i := bi + dir; i >= 0 && i < len(r.Widths); i += dir {
 			w := r.Widths[i]
 			if math.Abs(w.W-last) > 3 {
 				break
@@ -682,6 +771,129 @@ func (r *Report) band() {
 	}
 	r.BandLo, r.LoWall = grow(-1)
 	r.BandHi, r.HiWall = grow(+1)
+}
+
+// window are the judged widths within 6 mm of the width x.
+func (r *Report) window(valid []int, x float64) (xs, ys, vs []float64) {
+	for _, i := range valid {
+		w := r.Widths[i]
+		if math.Abs(w.W+0.5-x) <= 6 {
+			xs, ys, vs = append(xs, w.W+0.5), append(ys, w.Off), append(vs, w.OffSE*w.OffSE)
+		}
+	}
+	return
+}
+
+// best finds the width where you press closest to the centres: the lowest
+// point of a curve through the widths around the best measured one (not
+// just the best millimetre, so that it moves smoothly as data comes).
+func (r *Report) best(valid []int) {
+	b0 := valid[0]
+	for _, i := range valid {
+		w, b := r.Widths[i], r.Widths[b0]
+		if w.Off+w.OffSE < b.Off+b.OffSE {
+			b0 = i
+		}
+	}
+	x0 := r.Widths[b0].W + 0.5
+	r.HasBest, r.Best = true, x0
+	xs, ys, vs := r.window(valid, x0)
+	if len(xs) < 3 {
+		return
+	}
+	lo, hi := xs[0], xs[len(xs)-1]
+	if hi-lo < 2 {
+		return
+	}
+	if a, b, c, ok := parabola(xs, ys, vs, x0); ok {
+		x, _ := curveMin(a, b, c, x0, lo, hi)
+		r.Best = math.Round(x*10) / 10
+	}
+}
+
+// reliability is how sure it is that the best width really is where you
+// press closest to the centres, 0-1. The widths are drawn again many times
+// within their uncertainty and the curve fitted again: each time, how much
+// worse the best width is than the lowest point of that curve. Widths about
+// as good count as good (it doesn't matter which of them is picked); one
+// width with few clicks moves the curve only a little. It also needs widths
+// measured on both sides of the best (otherwise the best could be past
+// them) and plenty of clicks around it, so it grows as you play.
+func (r *Report) reliability(valid []int) {
+	if len(valid) == 0 {
+		r.Reliability = 0.15 * math.Min(1, r.Clicks/3000)
+		return
+	}
+	xs, ys, vs := r.window(valid, r.Best)
+	rng := rand.New(rand.NewSource(7))
+	const draws = 300
+	regret, away, shift := 0.0, 0, 0.0
+	dy := make([]float64, len(ys))
+	for k := 0; k < draws; k++ {
+		for i := range ys {
+			dy[i] = ys[i] + rng.NormFloat64()*math.Sqrt(vs[i])
+		}
+		var xmin, fmin, fbest float64
+		if len(xs) >= 3 && xs[len(xs)-1]-xs[0] >= 2 {
+			a, b, c, ok := parabola(xs, dy, vs, r.Best)
+			if !ok {
+				continue
+			}
+			xmin, fmin = curveMin(a, b, c, r.Best, xs[0], xs[len(xs)-1])
+			fbest = a
+		} else {
+			// too few widths for a curve: the widths themselves
+			xmin, fmin = xs[0], dy[0]
+			for i := range xs {
+				if dy[i] < fmin {
+					xmin, fmin = xs[i], dy[i]
+				}
+				if math.Abs(xs[i]-r.Best) < 0.6 {
+					fbest = dy[i]
+				}
+			}
+		}
+		regret += math.Max(0, fbest-fmin) / math.Max(0.05, fmin)
+		if math.Abs(xmin-r.Best) > 1 {
+			away++
+			shift += xmin - r.Best
+		}
+	}
+	regret /= draws
+	if away > 0 {
+		r.unsureShare = float64(away) / draws
+		r.unsureSide = 1
+		if shift < 0 {
+			r.unsureSide = -1
+		}
+	}
+	prec := 1 / (1 + (regret/0.02)*(regret/0.02))
+	// widths measured on both sides: of the best, or of the band (widths
+	// about as good as the best count as the best); and the clicks there
+	lo, hi := r.Best, r.Best
+	if r.HasBand {
+		lo, hi = math.Min(lo, r.BandLo), math.Max(hi, r.BandHi)
+	}
+	below, above := 0.0, 0.0
+	near := 0.0
+	for _, i := range valid {
+		x := r.Widths[i].W + 0.5
+		if x <= r.Best-0.5 && x >= lo-4 {
+			below = 1
+		}
+		if x >= r.Best+0.5 && x <= hi+4 {
+			above = 1
+		}
+	}
+	for _, w := range r.Widths {
+		x := w.W + 0.5
+		if math.Abs(x-r.Best) <= 2 || r.HasBand && w.Band {
+			near += w.Clicks
+		}
+	}
+	cov := 0.4 + 0.3*below + 0.3*above
+	amt := 1 - math.Exp(-near/2500)
+	r.Reliability = prec * cov * amt
 }
 
 // landing finds where you go from long to short, or that you land the same
@@ -742,84 +954,19 @@ func (r *Report) landing(had bool) {
 	}
 }
 
-// reliability is how sure it is that the best width really is where you
-// miss the least, 0-1. The misses of the widths are drawn again within
-// their uncertainty, many times: the fewer the times another width comes
-// out clearly better, the surer. Widths about as good count as good (it
-// doesn't matter which of them is picked). It also needs widths measured on both sides of the
-// best (otherwise the best could be past them) and plenty of clicks around
-// it, so it grows as you play.
-func (r *Report) reliability(valid []int) {
-	if len(valid) == 0 {
-		r.Reliability = 0.15 * math.Min(1, r.Clicks/3000)
-		return
-	}
-	bi := -1
-	for _, i := range valid {
-		if r.Widths[i].W+0.5 == r.Best {
-			bi = i
-		}
-	}
-	// how often another width comes out clearly better (3% fewer misses)
-	// when the misses are drawn again within their uncertainty
-	rng := rand.New(rand.NewSource(7))
-	const draws = 400
-	better := 0
-	wins := map[int]int{}
-	for k := 0; k < draws; k++ {
-		other, mine, oi := math.Inf(1), 0.0, -1
-		for _, i := range valid {
-			w := r.Widths[i]
-			v := w.Miss + rng.NormFloat64()*w.MissSE
-			if i == bi {
-				mine = v
-			} else if v < other {
-				other, oi = v, i
-			}
-		}
-		if other < mine*0.97 {
-			better++
-			wins[oi]++
-		}
-	}
-	prec := 1 - float64(better)/draws
-	for i, n := range wins {
-		if p := float64(n) / draws; p > r.doubtP {
-			r.doubt, r.doubtP = r.Widths[i].W+0.5, p
-		}
-	}
-	below, above := 0.0, 0.0
-	near := 0.0
-	for _, i := range valid {
-		x := r.Widths[i].W + 0.5
-		if x <= r.Best-0.5 && x >= r.Best-4 {
-			below = 1
-		}
-		if x >= r.Best+0.5 && x <= r.Best+4 {
-			above = 1
-		}
-	}
-	for _, w := range r.Widths {
-		if math.Abs(w.W+0.5-r.Best) <= 2 {
-			near += w.Clicks
-		}
-	}
-	cov := 0.4 + 0.3*below + 0.3*above
-	amt := 1 - math.Exp(-near/2500)
-	r.Reliability = prec * cov * amt
-}
-
 // measured tells whether there are enough clicks, from enough plays, within
 // a millimetre of the width w.
-func (r Report) measured(w float64) bool {
-	n, p := 0.0, 0.0
+func (r Report) measured(w float64) bool { return r.measuredN(w, probeN) }
+
+func (r Report) measuredN(w, n float64) bool {
+	c, p := 0.0, 0.0
 	for _, x := range r.Widths {
 		if math.Abs(x.W+0.5-w) <= 1 {
-			n += x.Clicks
+			c += x.Clicks
 			p += x.Plays
 		}
 	}
-	return n >= probeN && p >= 3
+	return c >= n && p >= 3
 }
 
 // Reliable is the reliability from which the best width can be kept: no
@@ -843,6 +990,8 @@ type Decision struct {
 	Why    string
 }
 
+const whyFollow = "following your last clicks"
+
 // Next takes the width now (cur) and the width your last clicks ask for
 // (fit, with its uncertainty fitSE), and says where to go next with what
 // the memory knows.
@@ -850,13 +999,14 @@ func (r Report) Next(cur, fit, fitSE float64, p Plan) Decision {
 	if d, ok := r.probe(cur, fit, p); ok {
 		return d
 	}
-	d := Decision{Width: fit, Factor: math.Max(0.45, 1/math.Sqrt(1+r.Clicks/3000)), Why: "following your last clicks"}
+	d := Decision{Width: fit, Factor: math.Max(0.45, 1/math.Sqrt(1+r.Clicks/3000)), Why: whyFollow}
 	if r.HasCross {
 		d.Width = r.CrossRel*r.Cross + (1-r.CrossRel)*fit
 		d.Why = fmt.Sprintf("towards %.1f mm, where you go from landing long to landing short", r.Cross)
 	}
 	// with a habit, what the clicks ask for that way is the habit itself:
-	// not followed (the misses can still move the area, below)
+	// not followed (how close to the centres you press can still move the
+	// area, below)
 	if r.Habit && (r.HabitK < 0 && d.Width < cur || r.HabitK > 0 && d.Width > cur) {
 		d.Width, d.Why = cur, r.habitWords()
 		if !r.HasBand {
@@ -876,21 +1026,18 @@ func (r Report) Next(cur, fit, fitSE float64, p Plan) Decision {
 		if r.HiWall {
 			hi = r.BandHi
 		}
-		if lo > hi {
-			lo, hi = hi, lo
-		}
 		if d.Width < lo || d.Width > hi {
 			d.Width = math.Max(lo, math.Min(hi, d.Width))
 			if !r.Habit {
 				if (d.Width == r.BandLo && r.LoWall) || (d.Width == r.BandHi && r.HiWall) {
-					d.Why = "kept inside your band: past it you miss more"
+					d.Why = "kept inside your band: past it you press further from the centres"
 				} else {
 					d.Why = "only a little past your band, to see how it goes"
 				}
 			}
 		}
-		// going out of the band: half steps, slower still where the misses
-		// are seen to grow that way
+		// going out of the band: half steps, slower still where it is seen
+		// to get worse that way
 		if (d.Width < cur && d.Width < r.BandLo) || (d.Width > cur && d.Width > r.BandHi) {
 			d.Factor *= 0.5
 			if dir := math.Copysign(1, d.Width-cur); r.slope*dir > 2*r.slopeSE {
@@ -901,25 +1048,25 @@ func (r Report) Next(cur, fit, fitSE float64, p Plan) Decision {
 	// your clicks alone don't ask clearly for another width: it stays (a
 	// map is never perfect, and following its noise would never let you
 	// settle)
-	if d.Why == "following your last clicks" && math.Abs(fit-cur) < math.Max(0.15, fitSE) {
+	if d.Why == whyFollow && math.Abs(fit-cur) < math.Max(0.15, fitSE) {
 		d.Width, d.Why = cur, "your clicks don't ask clearly for another width"
 	}
-	// the surer it is of the width where you miss the least, the more it
-	// goes there: when it is clearly better than the width now (where all
-	// widths are about as good, it doesn't wander among them)
+	// the surer it is of the width where you press closest to the centres,
+	// the more it goes there: when it is clearly better than the width now
+	// (where all widths are about as good, it doesn't wander among them)
 	if r.HasBest && r.HasBand && r.Best >= r.BandLo && r.Best <= r.BandHi && r.ClearlyBetter(cur) {
 		k := r.Reliability
 		if w := k*r.Best + (1-k)*d.Width; math.Abs(w-d.Width) >= 0.05 {
 			d.Width = w
 			if k >= 0.5 {
-				d.Why = fmt.Sprintf("towards %.1f mm, where you miss the least", r.Best)
+				d.Why = fmt.Sprintf("towards %.1f mm, where you press closest to the centres", r.Best)
 			}
 		}
 	}
 	if math.Abs(d.Width-cur) < 0.15 {
 		d.Width, d.Hold = cur, true
 		switch d.Why {
-		case "following your last clicks", "your clicks don't ask clearly for another width":
+		case whyFollow, "your clicks don't ask clearly for another width":
 			d.Why = "your clicks don't ask clearly for another width: it stays"
 		}
 	}
@@ -928,9 +1075,8 @@ func (r Report) Next(cur, fit, fitSE float64, p Plan) Decision {
 
 // probe decides whether to play the next stretch at a nearby width, to
 // measure it: only while the best width isn't sure yet, and never twice in
-// a row. First a width that might be clearly better than the best (more
-// clicks there settle it), else a side with little data (where your clicks
-// point first).
+// a row. First the side where the best could still be, else a side with
+// little data (where your clicks point first).
 func (r Report) probe(cur, fit float64, p Plan) (Decision, bool) {
 	if !p.Explore || p.WasProbe || r.Reliability >= Reliable || r.Clicks < 150 {
 		return Decision{}, false
@@ -938,19 +1084,28 @@ func (r Report) probe(cur, fit float64, p Plan) (Decision, bool) {
 	allowed := func(w float64) bool {
 		return !(p.Min > 0 && w < p.Min || p.Max > 0 && w > p.Max) && math.Abs(w-cur) >= 0.5
 	}
-	if r.doubtP >= 0.08 && allowed(r.doubt) && math.Abs(r.doubt-r.Best) <= math.Max(3, 0.035*r.Best) {
-		side := 1
-		if r.doubt < r.Best {
-			side = -1
-		}
-		return Decision{Width: r.doubt, Factor: 1, Probe: side,
-			Why: fmt.Sprintf("trying %.1f mm for a while: it might be better than %.1f mm, more clicks there will tell", r.doubt, r.Best)}, true
-	}
 	center := cur
 	if r.HasBest {
 		center = r.Best
 	}
 	dist := math.Max(1.5, 0.025*center)
+	words := func(w float64, side int) string {
+		if side < 0 {
+			return fmt.Sprintf("trying %.1f mm (narrower) for a while, to measure it", w)
+		}
+		return fmt.Sprintf("trying %.1f mm (wider) for a while, to measure it", w)
+	}
+	wall := func(w float64, side int) bool {
+		return side < 0 && r.LoWall && w < r.BandLo || side > 0 && r.HiWall && w > r.BandHi
+	}
+	try := func(side int, why string) (Decision, bool) {
+		w := center + float64(side)*dist
+		if wall(w, side) || !allowed(w) {
+			return Decision{}, false
+		}
+		return Decision{Width: math.Round(w*100) / 100, Factor: 1, Probe: side, Why: words(w, side) + why}, true
+	}
+	// the order of the sides: where your clicks point first
 	sides := []int{-1, 1}
 	if fit > cur || fit == cur && p.LastSide < 0 {
 		sides = []int{1, -1}
@@ -958,35 +1113,62 @@ func (r Report) probe(cur, fit float64, p Plan) (Decision, bool) {
 	if p.LastSide != 0 && fit == cur {
 		sides = []int{-p.LastSide, p.LastSide}
 	}
+	// first a side of the best with nothing measured (the best could be past it)
 	for _, side := range sides {
-		w := center + float64(side)*dist
-		if side < 0 && r.LoWall && w < r.BandLo || side > 0 && r.HiWall && w > r.BandHi {
-			continue // past a wall: already known to go worse
+		if !r.coveredSide(side) {
+			if d, ok := try(side, ": nothing measured on that side yet"); ok {
+				return d, true
+			}
 		}
-		if !allowed(w) || r.measured(w) {
+	}
+	// then the side where the best could still be, unless measured a lot already
+	if r.unsureShare >= 0.2 && !r.measuredN(center+float64(r.unsureSide)*dist, 3*probeN) {
+		if d, ok := try(r.unsureSide, fmt.Sprintf(": the best could be that way rather than %.1f mm", center)); ok {
+			return d, true
+		}
+	}
+	// then a side with little data
+	for _, side := range sides {
+		if r.measured(center + float64(side)*dist) {
 			continue
 		}
-		dir := "narrower"
-		if side > 0 {
-			dir = "wider"
+		if d, ok := try(side, ": there's little data on that side yet"); ok {
+			return d, true
 		}
-		return Decision{Width: math.Round(w*100) / 100, Factor: 1, Probe: side,
-			Why: fmt.Sprintf("trying %.1f mm (%s) for a while, to measure it: there's little data on that side yet", w, dir)}, true
 	}
 	return Decision{}, false
 }
 
-// ClearlyBetter tells whether the best width misses clearly less than the
-// width w (or w isn't measured).
+// coveredSide tells whether widths are measured on one side of the best
+// (-1 below, +1 above), within 4 mm of it or of the band.
+func (r Report) coveredSide(side int) bool {
+	lo, hi := r.Best, r.Best
+	if r.HasBand {
+		lo, hi = math.Min(lo, r.BandLo), math.Max(hi, r.BandHi)
+	}
+	for i, w := range r.Widths {
+		x := w.W + 0.5
+		if w.Clicks < 15 || w.OffSE <= 0 || r.support(i, 1) < validN {
+			continue
+		}
+		if side < 0 && x <= r.Best-0.5 && x >= lo-4 || side > 0 && x >= r.Best+0.5 && x <= hi+4 {
+			return true
+		}
+	}
+	return false
+}
+
+// ClearlyBetter tells whether at the best width you press clearly closer
+// to the centres than at the width w (or w isn't measured).
 func (r Report) ClearlyBetter(w float64) bool {
 	b, c := r.at(r.Best), r.at(w)
 	if b == nil {
 		return false
 	}
-	if c == nil || c.Clicks < 15 || c.MissSE <= 0 {
+	if c == nil || c.Clicks < 15 || c.OffSE <= 0 {
 		return true
 	}
-	return c.Miss-b.Miss > math.Max(0.03*b.Miss, 1.5*math.Hypot(c.MissSE, b.MissSE))
+	return c.Off-b.Off > math.Max(0.03*b.Off, 1.5*math.Hypot(c.OffSE, b.OffSE))
 }
 
 func (r Report) habitWords() string {

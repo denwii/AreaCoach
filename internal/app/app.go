@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"math"
-	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -29,7 +28,6 @@ type App struct {
 	envAt   time.Time
 	area    otd.Rect
 	areaOK  bool
-	areaSrc string
 	areaErr string
 	marks   []areaMark // the areas in use, oldest first
 	prev    *otd.Rect  // the area before the last one set here (to go back)
@@ -55,6 +53,10 @@ type App struct {
 	scanning atomic.Bool // the Songs folder is being read
 	mem      *calib.Store
 	memSaved time.Time
+	// the reliability seen lately (see relDrop)
+	relKey    string
+	relHigh   float64
+	relDownAt time.Time
 
 	stop  chan struct{}
 	kick  chan struct{}
@@ -169,7 +171,7 @@ func (a *App) pollArea() {
 	a.mu.Lock()
 	tablet, path := a.tabletLocked(), a.env.OTDPath
 	a.mu.Unlock()
-	r, src, err := readArea(tablet, path)
+	r, err := readArea(tablet, path)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err != nil {
@@ -177,17 +179,17 @@ func (a *App) pollArea() {
 		return
 	}
 	a.areaErr = ""
-	a.noteAreaLocked(r, src)
+	a.noteAreaLocked(r)
 }
 
-func (a *App) noteAreaLocked(r otd.Rect, src string) {
+func (a *App) noteAreaLocked(r otd.Rect) {
 	if !a.areaOK || !r.Same(a.area) {
 		a.marks = append(a.marks, areaMark{At: time.Now(), Area: r})
 		if len(a.marks) > 2000 {
 			a.marks = a.marks[len(a.marks)-1000:]
 		}
 	}
-	a.area, a.areaOK, a.areaSrc = r, true, src
+	a.area, a.areaOK = r, true
 }
 
 func (a *App) tabletLocked() string {
@@ -261,7 +263,7 @@ func (a *App) SetArea(r otd.Rect) error {
 		b := before
 		a.prev = &b
 	}
-	a.noteAreaLocked(r, "live")
+	a.noteAreaLocked(r)
 	a.mu.Unlock()
 	log.Printf("area set: %.2f x %.3f at %.2f, %.2f (rotation %.1f)", r.W, r.H, r.X, r.Y, r.Rot)
 	return nil
@@ -316,10 +318,3 @@ func (a *App) Settings() Settings {
 
 // round2 rounds to two decimals.
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
-
-func fileTime(p string) time.Time {
-	if st, err := os.Stat(p); err == nil {
-		return st.ModTime()
-	}
-	return time.Time{}
-}

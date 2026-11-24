@@ -97,22 +97,6 @@ func (m Mapper) Osu(x, y float64) (float64, float64) {
 	return inv[0][0]*dx + inv[0][1]*dy, inv[1][0]*dx + inv[1][1]*dy
 }
 
-// MMPerPx is the average scale (mm per osu!pixel).
-func (m Mapper) MMPerPx() float64 {
-	det := m.A[0][0]*m.A[1][1] - m.A[0][1]*m.A[1][0]
-	return math.Sqrt(math.Abs(det))
-}
-
-// PlayfieldCorners returns the playfield corners on the tablet (mm).
-func (m Mapper) PlayfieldCorners() [4][2]float64 {
-	var out [4][2]float64
-	pts := [4][2]float64{{0, 0}, {512, 0}, {512, 384}, {0, 384}}
-	for i, p := range pts {
-		out[i][0], out[i][1] = m.Point(p[0], p[1])
-	}
-	return out
-}
-
 // AreaCorners returns the corners of an OTD area on the tablet.
 func AreaCorners(r otd.Rect) [4][2]float64 {
 	th := r.Rot * math.Pi / 180
@@ -144,14 +128,6 @@ func TabletVec(dx, dy, rot float64) (float64, float64) {
 	return c*dx - s*dy, s*dx + c*dy
 }
 
-// tabletSpan is how much of the tablet an area w×h turned by rot degrees
-// takes, along the tablet's x and y.
-func tabletSpan(w, h, rot float64) (float64, float64) {
-	t := rot * math.Pi / 180
-	c, s := math.Abs(math.Cos(t)), math.Abs(math.Sin(t))
-	return w*c + h*s, w*s + h*c
-}
-
 // MaxWidth is the widest area turned by rot degrees, with height ratio ×
 // width, that fits a tablet tw × th (ratio 0: the height left aside).
 func MaxWidth(tw, th, ratio, rot float64) float64 {
@@ -165,21 +141,6 @@ func MaxWidth(tw, th, ratio, rot float64) float64 {
 		w = math.Min(w, th/d)
 	}
 	return w
-}
-
-// maxHeight is the tallest area of width w turned by rot degrees that fits
-// a tablet tw × th.
-func maxHeight(tw, th, w, rot float64) float64 {
-	t := rot * math.Pi / 180
-	c, s := math.Abs(math.Cos(t)), math.Abs(math.Sin(t))
-	h := math.Inf(1)
-	if s > 1e-9 {
-		h = math.Min(h, (tw-w*c)/s)
-	}
-	if c > 1e-9 {
-		h = math.Min(h, (th-w*s)/c)
-	}
-	return h
 }
 
 // FitsTablet reports whether an area lies within the tablet bounds.

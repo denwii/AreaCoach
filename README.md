@@ -11,7 +11,8 @@ It has two sections:
   shows the best area so far with a reliability bar that grows as you play.
 
 The Replay advice comes from one play alone, worked out with plain geometry. Live adds a
-memory of how each width went for you, so that it settles where you miss the least.
+memory of how each width went for you, so that it settles where you press closest to the
+centres of the circles.
 
 ![The advice after a map](docs/screenshots/replay.png)
 
@@ -97,8 +98,8 @@ It plays in **stretches** of about 150 clicks (200 with *gentle*, 100 with *stro
 
 - **Time to get used to it.** After every change, the first clicks count less: nothing
   at first, then more and more, fully after 15 to 90 clicks depending on how big the
-  change was. Getting used to a new area costs some misses at any width, and that
-  isn't held against the new width.
+  change was. Getting used to a new area throws your presses off at any width, and
+  that isn't held against the new width.
 - **Changes between maps.** When a stretch is complete, the change comes at the end of
   the map, so you start the next one with the new area. In a long map, it comes in a
   pause, after a double stretch.
@@ -117,51 +118,63 @@ it goes on from. At the end of every map the area is saved in OpenTabletDriver's
 
 Following your last clicks alone, Live could keep shrinking (or growing) the area: if you
 land short on fast jumps, it shrinks it; and a smaller area may line up better with your
-hand while you miss more, because every bit of shake of the hand becomes more pixels. So
-Live also remembers, for each millimetre of width you played:
+hand while you press further from the circles, because every bit of shake of the hand
+becomes more pixels. So Live also remembers, for each millimetre of width you played:
 
 - **how you land on jumps**: long or short, and by how much;
-- **your misses, compared on notes alike**: the same kind of jump with the same time
-  for it, so that a hard map doesn't make a width look bad. Near misses count a little
-  too: that way a few maps are enough, instead of thousands of clicks.
+- **how far from the centre of the circles you press, compared on notes alike**: the
+  same kind of jump with the same time for it, so that a hard map doesn't make a width
+  look bad. A press far off counts as one and a half radii from the centre, no more:
+  missing a lot on a hard map is normal and doesn't outweigh everything else. Every click says
+  something this way, not only the misses, so a few maps are enough.
 
 A width is judged only when there are at least about 60 clicks and three different maps
 around it: one map can just be easy. From that it finds:
 
 - **your band**: the widths that go about as well as the best one. Inside it, Live moves
   freely. Past its edges it goes only a little (about 1-1.5 mm), with half steps, slower
-  still where the misses are seen to grow that way; if they really grow, that edge
-  becomes a wall and the area comes back. If it goes well out there, the band stretches:
+  still where you are seen to press further from the centres that way; if you really
+  do, that edge becomes a wall and the area comes back. If it goes well out there, the band stretches:
   it is elastic, and follows you as your hand changes;
 - **where you go from long to short**: if you land long below a width and short above
   it, it heads there instead of bouncing back and forth;
 - **habits**: if you land short (or long) by about the same share at every width, the
   area isn't what causes it, and shrinking would only follow you: it stops chasing it
   and tells you so;
-- **the width where you miss the least**: the surer it is, the more Live goes there, as
-  long as it is clearly better than where you are (among widths about as good, it
-  doesn't wander).
+- **the width where you press closest to the centres**: the lowest point of a curve
+  through the widths around it, so it moves smoothly as data comes instead of jumping
+  from one millimetre to another. The surer it is, the more Live goes there, as long as
+  it is clearly better than where you are (among widths about as good, it doesn't
+  wander).
 
 **Trying nearby widths.** Data only where you already play would leave little to compare.
 So, while it isn't sure of the best width, now and then it plays one stretch at a nearby
-width, about 2 mm narrower or wider (first towards where your clicks point), or at a
-width that might be better than the best, and then comes back. It never does two in a
+width, about 2 mm narrower or wider: first on a side with no data yet (towards where your
+clicks point first), then where the best might still be, and then comes back. It never does two in a
 row, never past a wall, never outside your width range, and stops once it is sure. You
 can turn it off in Settings.
 
 ### The best area and its reliability
 
 **Best area so far** shows the area to keep when you've had enough of calibrating: the
-width where you missed the least (where several widths go about as well, the one closest
-to where you play), at the place on the tablet where the area went best. **Use the best
-area** puts it in OpenTabletDriver and stops Live.
+width where you press closest to the centres (where several widths go about as well, the
+one closest to where you play), at the place on the tablet where the area went best.
+**Use it and stop Live** puts it in OpenTabletDriver and stops Live.
 
-The **reliability** bar grows as you play. It is how sure it is that no other width would
-make you miss clearly less (3% or more): the misses of every width are drawn again within
-their uncertainty, many times, and it counts how often another width comes out clearly
-better. It also needs widths measured on both sides of the best, and plenty of clicks
-around it. From 75% the best area is reliable: you can stop calibrating and keep it, and
-Live stops trying other widths.
+The **reliability** bar grows as you play. It is how sure it is that the best width is
+really where you press closest to the centres: the distances of every width are drawn
+again within their uncertainty, many times, and each time it looks at how much you would
+lose by keeping the best width instead of the lowest point of the new curve. Widths about
+as good as the best count as good (it doesn't matter which of them it picks), and one
+width with few clicks moves the curve only a little, so the bar doesn't fall because the
+best slides inside your band or because a width barely measured looks good by chance. It
+also needs widths measured on both sides of the best (or of the band), and plenty of
+clicks around it. From 75% the best area is reliable: you can stop calibrating and keep
+it, and Live stops trying other widths.
+
+If the bar goes down by 10 points or more, a note says from how much and why: a width
+with fewer clicks now looks better than the old best, and Live is checking it. A few
+stretches there settle it, one way or the other.
 
 The memory is kept per tablet and per shape of area, across days: a day counts half
 after 10 days and is forgotten after 60. The maps you finish with Live off count too
@@ -248,9 +261,10 @@ go run github.com/akavel/rsrc@latest -manifest build/app.manifest -ico build/ico
 
 Run the tests with `go test ./...`: they include a simulated player for the Replay
 section, one for Live (with a fake OpenTabletDriver), and players of different kinds for
-the memory of the widths (one who misses more below a width, one whose hand wants a
-smaller area, one who needs a bigger one, one who always lands short, one who misses more
-after every change while getting used to it), about a minute in all.
+the memory of the widths (one who presses further from the centres below a width, one
+whose hand wants a smaller area, one who needs a bigger one, one who always lands short,
+one who is off more after every change while getting used to it, and a check that the
+reliability doesn't collapse once it is high), about a minute in all.
 
 Pushing a tag like `v3.1.0` makes the *Release* workflow build `AreaCoach.exe` and attach
 it, with its checksum, to the GitHub release.

@@ -64,27 +64,6 @@ func (h *HitObject) StackedEndPos(stackOffset float64) Vec {
 	return Vec{h.EndPos.X - o, h.EndPos.Y - o}
 }
 
-// PathPositionAt returns the slider ball position at time t (unstacked).
-func (h *HitObject) PathPositionAt(t float64) Vec {
-	if h.Kind != KindSlider || h.path == nil || h.EndTime <= h.Time {
-		return h.Pos
-	}
-	if t <= h.Time {
-		return h.Pos
-	}
-	if t >= h.EndTime {
-		return h.EndPos
-	}
-	span := (h.EndTime - h.Time) / float64(h.Slides)
-	p := (t - h.Time) / span
-	k := int(p)
-	f := p - float64(k)
-	if k%2 == 1 {
-		f = 1 - f
-	}
-	return h.Pos.Add(h.path.positionAt(f * h.path.distance))
-}
-
 // Beatmap is a parsed .osu file.
 type Beatmap struct {
 	FormatVersion  int
@@ -315,14 +294,10 @@ func diffRange(d, min, mid, max float64) float64 {
 	return mid
 }
 
-// DifficultyFor applies mods to the map's difficulty values. Values are kept
-// in single precision like the game, because stacking depends on it.
-func (bm *Beatmap) DifficultyFor(mods uint32) Difficulty {
-	return bm.DifficultyAdj(mods, Adjust{})
-}
-
-// DifficultyAdj is DifficultyFor with what osu!lazer's mod settings change:
-// the difficulty set by hand and the speed.
+// DifficultyAdj applies mods to the map's difficulty values, and what
+// osu!lazer's mod settings change: the difficulty set by hand and the speed.
+// Values are kept in single precision like the game, because stacking
+// depends on it.
 func (bm *Beatmap) DifficultyAdj(mods uint32, a Adjust) Difficulty {
 	cs, ar, od := float32(bm.CS), float32(bm.AR), float32(bm.OD)
 	if a.HasCS {
@@ -367,48 +342,6 @@ func min32(a, b float32) float32 {
 
 func stackThresholdFor(preempt, leniency float64) float64 {
 	return float64(float32(int(preempt)) * float32(leniency))
-}
-
-// BPM returns the dominant BPM (by time covered).
-func (bm *Beatmap) BPM() float64 {
-	if len(bm.raw) == 0 {
-		return 0
-	}
-	end := bm.raw[len(bm.raw)-1].time
-	dur := map[float64]float64{}
-	var un []TimingPoint
-	for _, tp := range bm.TimingPoints {
-		if tp.Uninherited && tp.BeatLength > 0 {
-			un = append(un, tp)
-		}
-	}
-	for i, tp := range un {
-		next := end
-		if i+1 < len(un) {
-			next = un[i+1].Time
-		}
-		if next > tp.Time || i == len(un)-1 {
-			dur[math.Round(tp.BeatLength*1000)/1000] += math.Max(next-tp.Time, 1)
-		}
-	}
-	best, bestD := 0.0, -1.0
-	for bl, d := range dur {
-		if d > bestD {
-			best, bestD = bl, d
-		}
-	}
-	if best <= 0 {
-		return 0
-	}
-	return 60000 / best
-}
-
-// LengthMs returns the drain span of the map in map time.
-func (bm *Beatmap) LengthMs() float64 {
-	if len(bm.raw) == 0 {
-		return 0
-	}
-	return bm.raw[len(bm.raw)-1].time - bm.raw[0].time
 }
 
 func (bm *Beatmap) timingAt(t float64) (beatLength, sv float64) {

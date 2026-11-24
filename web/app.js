@@ -264,10 +264,11 @@ function bestCard() {
   return `<div class="card"><h2>Best area so far</h2>
     ${b ? `<div class="advice num" style="margin-top:0">${f(b.w)} × ${f(b.h, 3)} mm</div><div class="sub num">X ${f(b.x)} · Y ${f(b.y)}</div>`
       : `<div class="sub">Not yet: it needs a few maps at a couple of widths.</div>`}
-    ${b && S.memory && S.memory.hasBand ? `<div class="note">Inside your band (${trim(S.memory.bandLo, 1)}–${trim(S.memory.bandHi, 1)} mm) all widths go about as well: this is the one ${Math.abs(b.w - S.memory.best) < 0.6 ? "where you missed the least" : "closest to where you play"}.</div>` : ""}
+    ${b && S.memory && S.memory.hasBand ? `<div class="note">Inside your band (${trim(S.memory.bandLo, 1)}–${trim(S.memory.bandHi, 1)} mm) all widths go about as well: this is the one ${Math.abs(b.w - S.memory.best) < 0.6 ? "where you press closest to the centres" : "closest to where you play"}.</div>` : ""}
     <div class="relhead"><span>Reliability</span><b class="num">${pct}%</b></div>
     <div class="relbar${rel >= 0.75 ? " ok" : ""}"><span style="width:${pct}%"></span><i style="left:75%"></i></div>
     <div class="note">${label} It grows with the clicks around the best width and on both sides of it.</div>
+    ${S.relDown ? `<div class="note warn">It went down from ${Math.round(S.relDown * 100)}%: a width with fewer clicks now looks better than the old best, and it's checking it. It grows again as you play.</div>` : ""}
     ${b ? `<div class="btns"><button class="btn${rel >= 0.75 ? " primary" : ""}" data-act="use-best" ${pending || (S.area && sameArea(S.area, b)) ? "disabled" : ""}>${S.area && sameArea(S.area, b) ? "In use" : S.live.on ? "Use it and stop Live" : "Use the best area"}</button></div>` : ""}
   </div>`;
 }
@@ -282,30 +283,35 @@ function memoryCard() {
     const n = `${Math.round(M.clicks).toLocaleString()} clicks${M.days > 1 ? ` over ${M.days} days` : ""}`;
     if (!M.hasBand) lines.push(`Learning (${n}). Until it has a few hundred clicks from a few maps at a couple of widths, it follows your clicks.`);
     else {
-      let t = `<b>Your band: ${trim(M.bandLo, 1)}–${trim(M.bandHi, 1)} mm</b>, all about as good; the fewest misses around ${trim(M.best, 1)} mm (${n}).`;
-      if (M.loWall) t += ` Below ${trim(M.bandLo, 1)} you miss more.`;
-      if (M.hiWall) t += ` Above ${trim(M.bandHi, 1)} you miss more.`;
+      let t = `<b>Your band: ${trim(M.bandLo, 1)}–${trim(M.bandHi, 1)} mm</b>, all about as good; closest to the centres around ${trim(M.best, 1)} mm (${n}).`;
+      if (M.loWall) t += ` Below ${trim(M.bandLo, 1)} you press further from the centres.`;
+      if (M.hiWall) t += ` Above ${trim(M.bandHi, 1)} you press further from the centres.`;
       lines.push(t);
     }
     if (M.hasCross) lines.push(`You land long below about ${trim(M.cross, 1)} mm and short above it.`);
     if (M.habit) lines.push(`At every width you land about ${Math.round(Math.abs(M.habitK) * 100)}% ${M.habitK < 0 ? "short" : "long"}: that's how you aim, not the area, so it doesn't ${M.habitK < 0 ? "shrink" : "grow"} the area for it.`);
   }
   const shown = (M && M.widths ? M.widths : []).filter((w) => w.clicks >= 15);
-  // misses against the best width (or, before there is a band, the fewest)
-  let ref = 0;
-  if (M && M.hasBand) { const b = shown.find((w) => M.best >= w.w && M.best < w.w + 1); if (b) ref = b.miss; }
-  if (!(ref > 0)) ref = Math.min(...shown.filter((w) => w.miss > 0).map((w) => w.miss));
+  // distance from the centres against the width nearest the best (or,
+  // before there is one, the closest); "same" within the noise, as the band
+  // judges it
+  const nearest = M && M.hasBest ? shown.filter((w) => w.off > 0).sort((p, q) => Math.abs(p.w + 0.5 - M.best) - Math.abs(q.w + 0.5 - M.best))[0] : null;
+  let ref = nearest ? nearest.off : 0, refSE = nearest ? nearest.offSE || 0 : 0;
+  if (!(ref > 0)) ref = Math.min(...shown.filter((w) => w.off > 0).map((w) => w.off));
   const rows = shown.map((w) => {
     const land = w.jumps >= 40 ? (Math.abs(w.land) < 0.01 ? "on target" : `${Math.round(Math.abs(w.land) * 100)}% ${w.land < 0 ? "short" : "long"}`) : "–";
-    const d = w.miss > 0 && isFinite(ref) && ref > 0 ? Math.round((w.miss / ref - 1) * 100) : null;
-    const miss = d == null ? "–" : d === 0 ? (M.hasBand && M.best >= w.w && M.best < w.w + 1 ? "best" : "same") : `${d > 0 ? "+" : "−"}${Math.abs(d)}%`;
-    const tag = w.band ? `<span class="tag">band</span>` : w.worse ? `<span class="tag bad">more misses</span>` : "";
+    const ok = w.off > 0 && isFinite(ref) && ref > 0;
+    const d = ok ? Math.round((w.off / ref - 1) * 100) : null;
+    const same = ok && Math.abs(w.off - ref) <= Math.max(0.04 * ref, 2 * Math.hypot(w.offSE || 0, refSE));
+    const isBest = w === nearest;
+    const miss = !ok ? "–" : isBest ? "best" : same || d === 0 ? "same" : `${d > 0 ? "+" : "−"}${Math.abs(d)}%`;
+    const tag = w.band ? `<span class="tag">band</span>` : w.worse ? `<span class="tag bad">further off</span>` : "";
     const here = S.area && S.area.w >= w.w && S.area.w < w.w + 1;
     return `<tr${here ? ' class="here"' : ""}><td class="num">${w.w}–${w.w + 1}${here ? " ◂" : ""}</td><td class="num">${Math.round(w.clicks).toLocaleString()}</td><td class="num">${land}</td><td class="num">${miss}</td><td>${tag}</td></tr>`;
   }).join("");
   return `<div class="card"><h2>Your widths</h2>${lines.map((l) => `<p class="sub" style="margin:0 0 8px">${l}</p>`).join("")}
-    ${rows ? `<table class="steps"><thead><tr><th>Width (mm)</th><th>Clicks</th><th>Lands on jumps</th><th>Misses vs the best</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="note">Misses are compared on notes alike (same kind of jump, same time for it), so a hard map doesn't make a width look bad; near misses count a little too. Old days count less and less.</div>` : ""}
+    ${rows ? `<table class="steps"><thead><tr><th>Width (mm)</th><th>Clicks</th><th>Lands on jumps</th><th>Off centre vs the best</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="note">"Off centre" is how far from the centre of the circles you press (a press far off counts as one and a half radii, no more, so a hard map full of misses doesn't outweigh everything), compared on notes alike (same kind of jump, same time for it); "same" is a difference too small for the clicks so far to tell apart. Old days count less and less.</div>` : ""}
     ${M && M.clicks > 0 ? `<div class="btns"><button class="link" data-act="forget">${forgetArmed ? "Sure? Click again to forget it all" : "Forget it and start again"}</button></div>` : ""}
   </div>`;
 }
@@ -357,7 +363,7 @@ function viewSettings() {
 // what each section shows: it is drawn again only when that changes, so
 // that a button doesn't move under the pointer for nothing
 function viewKey(t) {
-  const pick = t === "live" ? [S.live, S.area, pending, S.memory, forgetArmed, S.best, S.reliability]
+  const pick = t === "live" ? [S.live, S.area, pending, S.memory, forgetArmed, S.best, S.reliability, S.relDown]
     : t === "settings" ? [S.settings, S.display, S.area && S.area.h / S.area.w, S.osuDir, S.lazerData, S.otdPath, S.tablet, S.tabletW]
     : [S.report, S.busy, S.replayMsg, S.area, S.undo, S.note, S.lazerScan, S.tabletW, pending, S.report && ago(S.report.playedAt), S.memory && [S.memory.hasBand, S.memory.bandLo, S.memory.bandHi]];
   return t + JSON.stringify(pick);

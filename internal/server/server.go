@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the program version (set when building).
-var Version = "3.2.0"
+var Version = "3.3.0"
 
 // Server is the HTTP front end.
 type Server struct {

@@ -42,13 +42,6 @@ func StartSampler(in Input, keys []int) *Sampler {
 // Now is the sampler clock (ms).
 func (s *Sampler) Now() float64 { return float64(time.Since(s.start).Microseconds()) / 1000 }
 
-// SetKeys changes the keys looked at.
-func (s *Sampler) SetKeys(keys []int) {
-	s.mu.Lock()
-	s.keys = append([]int{}, keys...)
-	s.mu.Unlock()
-}
-
 // Drain returns the presses seen since the last call.
 func (s *Sampler) Drain() []RawPress {
 	s.mu.Lock()
