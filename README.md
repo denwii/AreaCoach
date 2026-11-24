@@ -5,9 +5,10 @@ It has two sections:
 
 - **Replay**: as soon as you finish a map, it reads the replay osu! just saved and tells
   you how to move and resize your area. One button puts it in OpenTabletDriver.
-- **Live**: for practice. While you play, it reshapes the area a little at a time, with
-  a soft sound at every touch, like sculpting. It remembers how you play at each width,
-  day after day, and finds by itself the band of widths that suit you.
+- **Live**: for practice. While you play, it reshapes the area a little at a time, map
+  after map, with a soft sound at every touch, like sculpting. It remembers how you play
+  at each width, day after day, finds by itself the band of widths that suit you, and
+  shows the best area so far with a reliability bar that grows as you play.
 
 The Replay advice comes from one play alone, worked out with plain geometry. Live adds a
 memory of how each width went for you, so that it settles where you miss the least.
@@ -88,11 +89,25 @@ Press **Start live calibration** and play. Area Coach:
 - notes every press of the keys that click (the ones in osu!'s settings, for example V and
   B) with the cursor position, a thousand times a second;
 - lines the presses up with the circles of the map, finding by itself the speed (DT,
-  HT, and any speed in lazer), Hard Rock, pauses and retries;
-- every 30 clicks fits the area to your last 150 clicks (as above) and moves the area
-  part of the way there: with *normal*, at most about 1.2% of the width and 0.6 mm per
-  change. Each change plays a sound: lower when the area grows, higher when it shrinks,
-  in between when it only moves.
+  HT, and any speed in lazer), Hard Rock, pauses and retries.
+
+### Stretches, not constant changes
+
+It plays in **stretches** of about 150 clicks (200 with *gentle*, 100 with *strong*):
+
+- **Time to get used to it.** After every change, the first clicks count less: nothing
+  at first, then more and more, fully after 15 to 90 clicks depending on how big the
+  change was. Getting used to a new area costs some misses at any width, and that
+  isn't held against the new width.
+- **Changes between maps.** When a stretch is complete, the change comes at the end of
+  the map, so you start the next one with the new area. In a long map, it comes in a
+  pause, after a double stretch.
+- **Small changes.** It moves the area part of the way towards the one your last clicks
+  fit: with *normal*, at most 1.5% of the width and 0.8 mm per change. A sound plays at
+  every change: lower when the area grows, higher when it shrinks, in between when it
+  only moves.
+- **Calm when you're fine.** If your clicks don't ask clearly for another width or
+  position (the difference is within what the stretch can tell), nothing changes.
 
 It starts from whatever area is set, and an area you set by hand while it runs is where
 it goes on from. At the end of every map the area is saved in OpenTabletDriver's file;
@@ -114,26 +129,48 @@ A width is judged only when there are at least about 60 clicks and three differe
 around it: one map can just be easy. From that it finds:
 
 - **your band**: the widths that go about as well as the best one. Inside it, Live moves
-  freely, as before. Past its edges it goes only a little (about 1-1.5 mm), with half
-  steps, slower still where the misses are seen to grow that way; if they really grow,
-  that edge becomes a wall and the area comes back. If it goes well out there, the band
-  stretches: it is elastic, and follows you as your hand changes;
+  freely. Past its edges it goes only a little (about 1-1.5 mm), with half steps, slower
+  still where the misses are seen to grow that way; if they really grow, that edge
+  becomes a wall and the area comes back. If it goes well out there, the band stretches:
+  it is elastic, and follows you as your hand changes;
 - **where you go from long to short**: if you land long below a width and short above
   it, it heads there instead of bouncing back and forth;
 - **habits**: if you land short (or long) by about the same share at every width, the
   area isn't what causes it, and shrinking would only follow you: it stops chasing it
-  and tells you so.
+  and tells you so;
+- **the width where you miss the least**: the surer it is, the more Live goes there, as
+  long as it is clearly better than where you are (among widths about as good, it
+  doesn't wander).
 
-The changes get finer as it learns (about half the size once it knows you well), and
-widths it hasn't measured yet are crossed with smaller steps, so that they get measured.
+**Trying nearby widths.** Data only where you already play would leave little to compare.
+So, while it isn't sure of the best width, now and then it plays one stretch at a nearby
+width, about 2 mm narrower or wider (first towards where your clicks point), or at a
+width that might be better than the best, and then comes back. It never does two in a
+row, never past a wall, never outside your width range, and stops once it is sure. You
+can turn it off in Settings.
+
+### The best area and its reliability
+
+**Best area so far** shows the area to keep when you've had enough of calibrating: the
+width where you missed the least (where several widths go about as well, the one closest
+to where you play), at the place on the tablet where the area went best. **Use the best
+area** puts it in OpenTabletDriver and stops Live.
+
+The **reliability** bar grows as you play. It is how sure it is that no other width would
+make you miss clearly less (3% or more): the misses of every width are drawn again within
+their uncertainty, many times, and it counts how often another width comes out clearly
+better. It also needs widths measured on both sides of the best, and plenty of clicks
+around it. From 75% the best area is reliable: you can stop calibrating and keep it, and
+Live stops trying other widths.
+
 The memory is kept per tablet and per shape of area, across days: a day counts half
 after 10 days and is forgotten after 60. The maps you finish with Live off count too
-(through their replays). **Your widths** shows it all, and **Forget it and start again**
-clears it.
+(through their replays, with the same care for the first clicks after a change). **Your
+widths** shows it all, and **Forget it and start again** clears it.
 
-**For practice: offline or unranked.** Live changes the area while a map is played, from
-how you are playing it: use it to practise, then play ranked with the area it found and
-Live off. It doesn't touch osu!: it reads the window title, the cursor and the keys that
+**For practice: offline or unranked.** Live changes the area while you play, from how you
+are playing: use it to practise, then play ranked with the best area it found and Live
+off. It doesn't touch osu!: it reads the window title, the cursor and the keys that
 click, like a key overlay, and changes the area in OpenTabletDriver.
 
 ## Settings
@@ -146,7 +183,9 @@ click, like a key overlay, and changes the area in OpenTabletDriver.
   is a hard wall for it and for the advice.
 - **Keys that click** (Live): empty takes them from osu! stable's settings (Z and X for
   lazer). **Pen tip clicks**: whether the pen tip (a mouse button) counts as a press.
-- **Each change** (Live): gentle, normal or strong. **Sound**: on or off.
+- **Each change** (Live): gentle, normal or strong: how often (after about 200, 150 or
+  100 clicks) and how far each change goes. **Try nearby widths**: whether it may play a
+  stretch at a nearby width to measure it. **Sound**: on or off.
 - **Where things are**: the osu! and osu!lazer folders, OpenTabletDriver's
   `settings.json` and the tablet, when they aren't found by themselves.
 
@@ -183,6 +222,9 @@ install.
 - **Live stays on "Lining up"**: check *Keys that click* in Settings (the log shows the
   keys it reads). Relax, Autopilot and mods that mirror or move the circles can't be
   lined up.
+- **When can I stop calibrating?** When the reliability bar passes 75%: then press *Use
+  the best area* and keep it for a while; a fixed area lets your hand settle, which
+  matters more than tenths of a millimetre.
 - **OpenTabletDriver doesn't answer**: start it. Without it the area is still written in
   its file, and it takes it when it starts.
 - **The OpenTabletDriver window shows old numbers**: press *Reopen the OpenTabletDriver
@@ -207,8 +249,8 @@ go run github.com/akavel/rsrc@latest -manifest build/app.manifest -ico build/ico
 Run the tests with `go test ./...`: they include a simulated player for the Replay
 section, one for Live (with a fake OpenTabletDriver), and players of different kinds for
 the memory of the widths (one who misses more below a width, one whose hand wants a
-smaller area, one who needs a bigger one, one who always lands short), about half a
-minute in all.
+smaller area, one who needs a bigger one, one who always lands short, one who misses more
+after every change while getting used to it), about a minute in all.
 
 Pushing a tag like `v3.1.0` makes the *Release* workflow build `AreaCoach.exe` and attach
 it, with its checksum, to the GitHub release.

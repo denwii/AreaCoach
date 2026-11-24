@@ -31,6 +31,9 @@ type State struct {
 	Live      LiveState `json:"live"`
 	// what the calibration remembers of the widths, for the area in use
 	Memory *calib.Report `json:"memory,omitempty"`
+	// the area that went best so far, and how sure that is (0-1)
+	Best        *otd.Rect `json:"best,omitempty"`
+	Reliability float64   `json:"reliability"`
 }
 
 // State returns the state for the interface.
@@ -41,6 +44,7 @@ func (a *App) State() State {
 		m := a.memReport(r)
 		mem = &m
 	}
+	best, rel, hasBest := a.BestArea()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := State{Version: a.version, Settings: a.set, AreaSrc: a.areaSrc, AreaErr: a.areaErr, OsuDir: a.env.OsuDir,
@@ -70,6 +74,12 @@ func (a *App) State() State {
 		_, _, s.LazerScan = a.lazer.Counts()
 	}
 	s.Memory = mem
+	if mem != nil {
+		s.Reliability = rel
+	}
+	if hasBest {
+		s.Best = &best
+	}
 	if s.Problems == nil {
 		s.Problems = []string{}
 	}

@@ -129,3 +129,13 @@ svg.fig.round { max-width: 340px; margin: 0 auto; }
 
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 13px; max-width: 80vw; z-index: 5; }
 .toast.err { background: var(--bad); color: #fff; }
+
+.block { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.blockbar { width: 180px; height: 6px; border-radius: 99px; background: var(--surface2); border: 1px solid var(--border); overflow: hidden; }
+.blockbar span { display: block; height: 100%; background: var(--accent); }
+.relhead { display: flex; justify-content: space-between; margin-top: 16px; font-size: 13px; color: var(--muted); }
+.relhead b { color: var(--text); }
+.relbar { position: relative; height: 10px; border-radius: 99px; background: var(--surface2); border: 1px solid var(--border); margin-top: 6px; overflow: hidden; }
+.relbar span { display: block; height: 100%; background: var(--warn); transition: width .4s; }
+.relbar.ok span { background: var(--good); }
+.relbar i { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--muted); opacity: .5; }

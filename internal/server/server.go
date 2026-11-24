@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the program version (set when building).
-var Version = "3.1.0"
+var Version = "3.2.0"
 
 // Server is the HTTP front end.
 type Server struct {
@@ -120,6 +120,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		err = s.a.LiveBack()
 	case "forget":
 		s.a.Forget()
+	case "use-best":
+		err = s.a.UseBest()
 	case "sound":
 		platform.PlayWav(live.SoundShrink)
 		go func() {
@@ -178,6 +180,9 @@ func (s *Server) settings(body []byte) error {
 		num("maxW", &st.MaxW)
 		if v, ok := q["sound"]; ok {
 			_ = json.Unmarshal(v, &st.Sound)
+		}
+		if v, ok := q["tryWidths"]; ok {
+			_ = json.Unmarshal(v, &st.TryWidths)
 		}
 	})
 	if bad != nil {

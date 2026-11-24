@@ -220,26 +220,56 @@ function viewLive() {
     return `<tr><td>${new Date(st.at).toLocaleTimeString()}</td><td class="l" title="${esc(st.map)}">${esc(st.map)}</td><td class="num">${st.misses}/${st.clicks}</td><td class="num">${mv.join(" · ")}</td><td class="num">${f(b.w)} × ${f(b.h, 3)}</td></tr>${st.why ? `<tr class="why"><td></td><td class="l" colspan="4">${esc(st.why)}</td></tr>` : ""}`;
   }).join("");
   const start = L.start;
+  // the stretch being played and when the next change comes
+  let block = "";
+  if (L.on && L.blockNeed > 0) {
+    const done = Math.min(L.blockDone, L.blockNeed);
+    const left = Math.max(0, Math.ceil(L.blockNeed - L.blockDone));
+    block = `<div class="block"><div class="blockbar"><span style="width:${(100 * done) / L.blockNeed}%"></span></div>
+      <span class="muted">${L.trying ? "Trying a nearby width to measure it. " : ""}${left > 0 ? `Next change after about ${left} more clicks, at the end of a map.` : "Next change at the end of this map (or in a pause)."}</span></div>`;
+  }
   return `<div class="card">
     <div class="livebar">
       <button class="btn ${L.on ? "" : "primary"}" data-act="live" data-on="${L.on ? "0" : "1"}" ${pending ? "disabled" : ""}>${L.on ? "Stop" : "Start live calibration"}</button>
       <div class="status"><span class="pulse ${phase[0]}"></span><span>${phase[1]}</span></div>
       <span class="muted">${detail}</span>
     </div>
-    <p class="sub" style="margin-top:14px">While you play, every 30 clicks it looks at your last ones and moves the area a little towards the one that fits them, with a sound: lower when it grows, higher when it shrinks. Like sculpting: small touches, never big jumps. It also remembers how you play at each width, day after day, and finds by itself the band of widths that suit you: inside it moves freely, past its edges only a little and slowly, and it comes back where you miss more. Any area you set by hand is where it starts from.</p>
+    ${block}
+    <p class="sub" style="margin-top:14px">It plays in stretches of about ${Math.round(L.blockNeed || 150)} clicks: after each change it gives you time to get used to the new area (the first clicks count less), then, at the end of the map, it moves the area towards the one your clicks fit, with a sound: lower when it grows, higher when it shrinks. It remembers how you play at each width, day after day; while it isn't sure yet, now and then it plays a stretch at a nearby width to measure it. When nothing asks clearly for a change, the area stays. Any area you set by hand is where it starts from.</p>
     ${L.on && L.keys && L.keys.length ? `<div class="note">Clicks read from: ${L.keys.map(esc).join(", ")} <button class="link" data-goto="settings">change</button></div>` : ""}
     ${L.error ? `<div class="note warn">${esc(L.error)}</div>` : ""}
-    <div class="caution"><b>For practice: offline or unranked.</b> Live changes the area while a map is played, from how you are playing it: use it to practise, then play ranked with the area it found and Live off. It doesn't touch osu!: it reads the window title, the cursor and the keys that click, like a key overlay, and changes the area in OpenTabletDriver.</div>
+    <div class="caution"><b>For practice: offline or unranked.</b> Live changes the area while you play, from how you are playing: use it to practise, then play ranked with the best area it found and Live off. It doesn't touch osu!: it reads the window title, the cursor and the keys that click, like a key overlay, and changes the area in OpenTabletDriver.</div>
   </div>
   <div class="grid">
-    <div class="card"><h2>Area</h2>
+    ${bestCard()}
+    <div class="card"><h2>Area now</h2>
       ${S.area ? `<div class="advice num" style="margin-top:0">${f(S.area.w)} × ${f(S.area.h, 3)} mm</div><div class="sub num">X ${f(S.area.x)} · Y ${f(S.area.y)}</div>` : `<div class="sub">OpenTabletDriver doesn't answer.</div>`}
+      ${S.area ? tabletFig([{ r: S.area, kind: "now" }, ...(S.best ? [{ r: S.best, kind: "new" }] : [])]) : ""}
+      <div class="legend"><span><span class="sw" style="border:1.5px dashed var(--muted)"></span>Now</span>${S.best ? `<span><span class="sw" style="background:var(--accent-soft);border:1.5px solid var(--accent)"></span>Best so far</span>` : ""}</div>
       ${start && S.area && !sameArea(start, S.area) ? `<div class="note">When you started: ${areaTxt(start)}</div><div class="btns"><button class="btn" data-act="live-back">Back to that area</button></div>` : ""}
     </div>
-    <div class="card"><h2>On the tablet</h2>${S.area ? tabletFig([...(start && !sameArea(start, S.area) ? [{ r: start, kind: "now" }] : []), { r: S.area, kind: "new" }]) : ""}</div>
   </div>
   ${memoryCard()}
   <div class="card"><h2>Changes</h2>${stepRows ? `<table class="steps"><thead><tr><th>Time</th><th class="l">Map</th><th>Outside</th><th>Change (mm)</th><th>Area</th></tr></thead><tbody>${stepRows}</tbody></table>` : `<div class="sub">None yet.</div>`}</div>`;
+}
+
+// the best area so far, how reliable it is, and a button to keep it
+function bestCard() {
+  const rel = Math.max(0, Math.min(1, S.reliability || 0));
+  const pct = Math.round(rel * 100);
+  const label = rel >= 0.75 ? "Reliable: you can stop calibrating and keep it."
+    : rel >= 0.4 ? "Getting there: a few more maps make it surer."
+    : "Learning: play some maps with Live on.";
+  const b = S.best;
+  return `<div class="card"><h2>Best area so far</h2>
+    ${b ? `<div class="advice num" style="margin-top:0">${f(b.w)} × ${f(b.h, 3)} mm</div><div class="sub num">X ${f(b.x)} · Y ${f(b.y)}</div>`
+      : `<div class="sub">Not yet: it needs a few maps at a couple of widths.</div>`}
+    ${b && S.memory && S.memory.hasBand ? `<div class="note">Inside your band (${trim(S.memory.bandLo, 1)}–${trim(S.memory.bandHi, 1)} mm) all widths go about as well: this is the one ${Math.abs(b.w - S.memory.best) < 0.6 ? "where you missed the least" : "closest to where you play"}.</div>` : ""}
+    <div class="relhead"><span>Reliability</span><b class="num">${pct}%</b></div>
+    <div class="relbar${rel >= 0.75 ? " ok" : ""}"><span style="width:${pct}%"></span><i style="left:75%"></i></div>
+    <div class="note">${label} It grows with the clicks around the best width and on both sides of it.</div>
+    ${b ? `<div class="btns"><button class="btn${rel >= 0.75 ? " primary" : ""}" data-act="use-best" ${pending || (S.area && sameArea(S.area, b)) ? "disabled" : ""}>${S.area && sameArea(S.area, b) ? "In use" : S.live.on ? "Use it and stop Live" : "Use the best area"}</button></div>` : ""}
+  </div>`;
 }
 
 let forgetArmed = false;
@@ -250,9 +280,9 @@ function memoryCard() {
     lines.push("Nothing yet. As you play with Live on, or finish maps with the program open, it learns how you do at each width.");
   } else {
     const n = `${Math.round(M.clicks).toLocaleString()} clicks${M.days > 1 ? ` over ${M.days} days` : ""}`;
-    if (!M.hasBand) lines.push(`Learning (${n}). Until it has a few hundred clicks at a couple of widths it follows your clicks, with smaller steps on widths it hasn't measured yet.`);
+    if (!M.hasBand) lines.push(`Learning (${n}). Until it has a few hundred clicks from a few maps at a couple of widths, it follows your clicks.`);
     else {
-      let t = `<b>Your band: ${trim(M.bandLo, 1)}–${trim(M.bandHi, 1)} mm</b>, best around ${trim(M.best, 1)} mm (${n}).`;
+      let t = `<b>Your band: ${trim(M.bandLo, 1)}–${trim(M.bandHi, 1)} mm</b>, all about as good; the fewest misses around ${trim(M.best, 1)} mm (${n}).`;
       if (M.loWall) t += ` Below ${trim(M.bandLo, 1)} you miss more.`;
       if (M.hiWall) t += ` Above ${trim(M.bandHi, 1)} you miss more.`;
       lines.push(t);
@@ -303,7 +333,10 @@ function viewSettings() {
     <div><select class="input short" id="penTip" data-set="penTip" style="width:220px">${opt("auto", st.penTip, "as osu! says")}${opt("on", st.penTip, "yes")}${opt("off", st.penTip, "no")}</select></div>
     <label for="strength">Each change</label>
     <div><select class="input" id="strength" data-set="strength" style="width:220px">${opt("gentle", st.strength, "gentle")}${opt("normal", st.strength, "normal")}${opt("strong", st.strength, "strong")}</select>
-      <div class="help">How far each touch goes: gentle moves at most about 0.6% of the width and 0.4 mm, strong about 2% and 1 mm.</div></div>
+      <div class="help">How often and how far: gentle changes after about 200 clicks by at most 0.8% of the width and 0.5 mm, normal after 150 by 1.5% and 0.8 mm, strong after 100 by 2.5% and 1.2 mm.</div></div>
+    <label for="tryWidths">Try nearby widths</label>
+    <div><select class="input" id="tryWidths" data-set="tryWidths" style="width:220px">${opt("1", st.tryWidths ? "1" : "0", "yes")}${opt("0", st.tryWidths ? "1" : "0", "no")}</select>
+      <div class="help">While it isn't sure of the best width, now and then it plays a stretch about 2 mm narrower or wider (or at a width that might be better) to measure it, then comes back. Without it, it only learns the widths it passes through.</div></div>
     <label for="sound">Sound</label>
     <div class="row"><select class="input" id="sound" data-set="sound" style="width:220px">${opt("1", st.sound ? "1" : "0", "on")}${opt("0", st.sound ? "1" : "0", "off")}</select><button class="link" data-act="sound">play it</button></div>
   </div></div>
@@ -324,7 +357,7 @@ function viewSettings() {
 // what each section shows: it is drawn again only when that changes, so
 // that a button doesn't move under the pointer for nothing
 function viewKey(t) {
-  const pick = t === "live" ? [S.live, S.area, pending, S.memory, forgetArmed]
+  const pick = t === "live" ? [S.live, S.area, pending, S.memory, forgetArmed, S.best, S.reliability]
     : t === "settings" ? [S.settings, S.display, S.area && S.area.h / S.area.w, S.osuDir, S.lazerData, S.otdPath, S.tablet, S.tabletW]
     : [S.report, S.busy, S.replayMsg, S.area, S.undo, S.note, S.lazerScan, S.tabletW, pending, S.report && ago(S.report.playedAt), S.memory && [S.memory.hasBand, S.memory.bandLo, S.memory.bandHi]];
   return t + JSON.stringify(pick);
@@ -377,6 +410,7 @@ document.addEventListener("click", (e) => {
     case "reopen": act("reopen-otd", {}, "OpenTabletDriver window reopened"); break;
     case "live": act("live", { on: t.dataset.on === "1" }); break;
     case "live-back": act("live-back", {}, "Starting area back"); break;
+    case "use-best": act("use-best", {}, "Best area set in OpenTabletDriver"); break;
     case "forget":
       if (!forgetArmed) { forgetArmed = true; drawn = ""; render(); setTimeout(() => { forgetArmed = false; drawn = ""; render(); }, 4000); }
       else { forgetArmed = false; act("forget", {}, "Forgotten: it starts learning again"); }
@@ -406,7 +440,7 @@ document.addEventListener("change", (e) => {
     else if (!isFinite(Number(v))) { toast("Type a number", true); return; }
     else v = Number(v);
   }
-  if (k === "sound") v = v === "1";
+  if (k === "sound" || k === "tryWidths") v = v === "1";
   el.blur();
   saveSetting(k, v);
 });

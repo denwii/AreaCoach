@@ -23,12 +23,16 @@ type Settings struct {
 	Keys   string `json:"keys"`
 	PenTip string `json:"penTip"`
 	Sound  bool   `json:"sound"`
-	// live: how big each change is: "gentle", "normal", "strong"
+	// live: how big and how often each change is: "gentle", "normal",
+	// "strong"
 	Strength string `json:"strength"`
+	// live: it may play a stretch at a nearby width to measure it, while it
+	// isn't sure of the best one yet
+	TryWidths bool `json:"tryWidths"`
 }
 
 func defaultSettings() Settings {
-	return Settings{PenTip: "auto", Sound: true, Strength: "normal"}
+	return Settings{PenTip: "auto", Sound: true, Strength: "normal", TryWidths: true}
 }
 
 const settingsFile = "settings-v3.json"

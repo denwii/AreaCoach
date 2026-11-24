@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"areacoach/internal/aim"
+	"areacoach/internal/calib"
 	"areacoach/internal/geom"
 	"areacoach/internal/osu"
 	"areacoach/internal/otd"
@@ -198,7 +199,7 @@ func TestSculptMovesALittle(t *testing.T) {
 	cur := otd.Rect{W: 80, H: 45, X: 76, Y: 47.5}
 	lim := aim.Limits{Ratio: 0.5625, TabletW: 152, TabletH: 95}
 	next, ok := sculpt(cur, otd.Rect{W: 90, H: 50.625, X: 80, Y: 47.5}, lim, "normal", 1, 1)
-	if !ok || math.Abs(next.W-80.96) > 0.01 || math.Abs(next.X-76.6) > 0.01 || next.Y != 47.5 || math.Abs(next.H-next.W*0.5625) > 0.001 {
+	if !ok || math.Abs(next.W-81.2) > 0.01 || math.Abs(next.X-76.8) > 0.01 || next.Y != 47.5 || math.Abs(next.H-next.W*0.5625) > 0.001 {
 		t.Fatalf("got %+v", next)
 	}
 	if _, ok := sculpt(cur, otd.Rect{W: 80.05, H: 45.03, X: 76.05, Y: 47.5}, lim, "normal", 1, 1); ok {
@@ -246,4 +247,47 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func TestBestAreaAndUseIt(t *testing.T) {
+	w := newWorld(t)
+	if err := saveSettings(w.data, Settings{OsuDir: w.osuDir, OTDPath: w.otdPath, Ratio: 0.5625}); err != nil {
+		t.Fatal(err)
+	}
+	a := New(w.data, "test")
+	a.Run()
+	defer a.Close()
+	waitFor(t, "the area", func() bool { return a.State().Area != nil })
+	if err := a.UseBest(); err == nil {
+		t.Fatal("a best area out of nothing")
+	}
+	// plays at a few widths: fewer misses at 74 than at 72 and 76
+	cur, _ := a.current()
+	key := a.memKey(cur)
+	rng := rand.New(rand.NewSource(5))
+	for _, wd := range []float64{72.5, 74.5, 76.5} {
+		for k := 0; k < 6; k++ {
+			var cs []calib.Click
+			for i := 0; i < 120; i++ {
+				s := 0.3
+				if wd != 74.5 {
+					s = 0.4
+				}
+				ex, ey := rng.NormFloat64()*s*36, rng.NormFloat64()*s*36
+				cs = append(cs, calib.Click{Width: wd, Dist: math.Hypot(ex, ey) / 36, ErrX: ex, ErrY: ey, Radius: 36, MoveX: 150, MoveY: 0, Gap: 250, Weight: 1})
+			}
+			a.mem.Add(key, time.Now(), fmt.Sprint(wd, k), cs)
+		}
+	}
+	a.mem.SetPos(key, 77.1, 47.2)
+	st := a.State()
+	if st.Best == nil || math.Abs(st.Best.W-74.5) > 0.01 || st.Best.X != 77.1 || math.Abs(st.Best.H-74.5*0.5625) > 0.001 || st.Reliability <= 0 {
+		t.Fatalf("best %+v reliability %.2f", st.Best, st.Reliability)
+	}
+	if err := a.UseBest(); err != nil {
+		t.Fatal(err)
+	}
+	if got := otdArea(t, w.otdPath); !got.Same(*st.Best) {
+		t.Fatalf("settings.json has %+v, want %+v", got, *st.Best)
+	}
 }

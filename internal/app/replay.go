@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"areacoach/internal/aim"
+	"areacoach/internal/calib"
 	"areacoach/internal/osu"
 	"areacoach/internal/otd"
 )
@@ -352,7 +353,7 @@ func (a *App) analyze(f replayFile) (*Report, bool) {
 			id = f.path
 		}
 		if !a.mem.Seen(a.memKey(out.Used), id) {
-			a.remember(f.mod, id, clicks, aim.Moves(objs, d, rate, clicks), areas)
+			a.remember(f.mod, id, clicks, aim.Moves(objs, d, rate, clicks), areas, a.adaptWeights(clicks, areas, wallOf))
 		}
 	}
 	for _, s := range samples {
@@ -368,6 +369,30 @@ func (a *App) analyze(f replayFile) (*Report, bool) {
 		filepath.Base(f.path), out.Map, res.Before.Clicks, res.Before.Misses, res.After.Misses,
 		out.Used.W, out.Used.H, out.Used.X, out.Used.Y, res.Area.W, res.Area.H, res.Area.X, res.Area.Y)
 	return out, false
+}
+
+// adaptWeights is how much each click of a replay counts: less in the first
+// ones after the area changed (just before the play, or during it).
+func (a *App) adaptWeights(cs []aim.Click, areas []otd.Rect, wallOf func(aim.Click) time.Time) []float64 {
+	out := make([]float64, len(cs))
+	var ad adaptation
+	first := true
+	for i, c := range cs {
+		if !c.Pressed || !areas[i].Valid() {
+			continue
+		}
+		if first {
+			first = false
+			// changed in the last minutes before the play: not used to it yet
+			ad.area, ad.known = areas[i], true
+			if from, _, at, ok := a.lastChange(wallOf(c)); ok && wallOf(c).Sub(at) < 3*time.Minute && from.Valid() {
+				ch := math.Abs(areas[i].W-from.W) + math.Abs(areas[i].X-from.X) + math.Abs(areas[i].Y-from.Y)
+				ad.need = calib.AdaptNeed(ch)
+			}
+		}
+		out[i], _ = ad.weight(areas[i])
+	}
+	return out
 }
 
 func firstPressed(cs []aim.Click) aim.Click {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"areacoach/internal/aim"
+	"areacoach/internal/calib"
 	"areacoach/internal/geom"
 	"areacoach/internal/live"
 	"areacoach/internal/osu"
@@ -37,6 +39,11 @@ type LiveState struct {
 	Steps   []LiveStep  `json:"steps"`
 	Keys    []string    `json:"keys"`
 	Error   string      `json:"error,omitempty"`
+	// the stretch being played: clicks counted so far (the first ones after
+	// a change count less) and clicks it needs before the next change
+	BlockDone float64 `json:"blockDone"`
+	BlockNeed float64 `json:"blockNeed"`
+	Trying    bool    `json:"trying"` // the stretch is at a nearby width, to measure it
 }
 
 type liveCtl struct {
@@ -56,15 +63,31 @@ func newLiveCtl(a *App) *liveCtl {
 	return &liveCtl{a: a, st: LiveState{Phase: "off"}, window: platform.OsuWindow, input: sysInput{}}
 }
 
-// sculpting: every stepClicks clicks (and at least stepGap apart) the area
-// moves part of the way towards the one that fits the last fitClicks
-// clicks, by at most a little.
-const (
-	stepClicks = 30
-	fitClicks  = 150
-)
+// The live calibration plays in stretches: after a change it waits until
+// enough clicks are played with the new area (the first ones count less,
+// while the hand gets used to it), then, at the end of the map or in a
+// pause, it decides the next change. poolSize clicks are kept for that.
+const poolSize = 300
 
-var stepGap = 8 * time.Second
+// blockClicks is how many clicks a stretch needs, by how big the changes
+// are meant to be.
+func blockClicks(strength string) float64 {
+	if blockOverride > 0 {
+		return blockOverride
+	}
+	switch strength {
+	case "gentle":
+		return 200
+	case "strong":
+		return 100
+	}
+	return 150
+}
+
+var (
+	blockOverride float64  // tests: shorter stretches
+	breakGap      = 1500.0 // ms without presses that make a pause in a map
+)
 
 func (l *liveCtl) state() LiveState {
 	l.mu.Lock()
@@ -110,6 +133,7 @@ func (l *liveCtl) setOn(on bool) {
 	l.mu.Unlock()
 	close(stop)
 	<-done
+	l.set(func(s *LiveState) { s.BlockDone, s.Trying = 0, false })
 	log.Printf("live: off")
 }
 
@@ -204,21 +228,46 @@ func (l *liveCtl) run(stop, done chan struct{}) {
 	a := l.a
 	var smp *live.Sampler
 	var ses *live.Session
-	var lastStep time.Time
-	// the last clicks, across maps, ready for the fit
+	// across maps: the last clicks ready for the fit, how used to the area
+	// the hand is, the stretch being played
 	var pool []aim.Sample
-	var poolHits []bool
-	fresh := 0
+	var adapt adaptation
+	var plan calib.Plan
+	var preProbe otd.Rect
+	block := 0.0
+	lastPress := 0.0
 	seen := map[[2]float64]bool{}
 	stepped := false
 	var nomapAt time.Time
-	playID := ""
-	end := func() {
+	playID, title := "", ""
+	need := func() float64 { return blockClicks(a.Settings().Strength) }
+	showBlock := func() {
+		l.set(func(s *LiveState) { s.BlockDone, s.BlockNeed, s.Trying = block, need(), plan.WasProbe })
+	}
+	// decide the next change, if the stretch is complete
+	try := func() {
+		if block < need() || len(pool) < aim.MinSamples {
+			return
+		}
+		cur, ok := a.current()
+		if !ok {
+			return
+		}
+		if l.step(pool, cur, &plan, &preProbe, title) {
+			stepped = true
+		}
+		block = 0
+		showBlock()
+	}
+	finish := func(change bool) {
+		if change {
+			try() // between maps: the moment to change the area
+		}
 		if smp != nil {
 			smp.Stop()
 			smp = nil
 		}
-		if ses != nil && stepped {
+		if stepped {
 			// what was found while playing stays when OpenTabletDriver restarts
 			if r, ok := a.current(); ok {
 				a.mu.Lock()
@@ -232,7 +281,25 @@ func (l *liveCtl) run(stop, done chan struct{}) {
 		ses, stepped = nil, false
 		seen = map[[2]float64]bool{}
 	}
-	defer end()
+	end := func() { finish(true) }
+	defer func() {
+		// turned off in the middle of a trial width: back to the area before
+		if plan.WasProbe && preProbe.Valid() {
+			if cur, ok := a.current(); ok && !cur.Same(preProbe) {
+				a.mu.Lock()
+				tablet := a.tabletLocked()
+				a.mu.Unlock()
+				if err := setLiveArea(tablet, preProbe); err == nil {
+					a.mu.Lock()
+					a.noteAreaLocked(preProbe, "live")
+					a.mu.Unlock()
+					stepped = true
+					log.Printf("live: off while trying %.2f mm: back to %.2f x %.3f", cur.W, preProbe.W, preProbe.H)
+				}
+			}
+		}
+		finish(false) // turned off: the area stays as it is (saved)
+	}()
 	t := time.NewTicker(200 * time.Millisecond)
 	defer t.Stop()
 	idle := 0
@@ -253,8 +320,8 @@ func (l *liveCtl) run(stop, done chan struct{}) {
 			l.set(func(s *LiveState) { s.Phase, s.Map = "noosu", "" })
 			continue
 		}
-		title := platform.MapTitle(w.Title)
-		if title == "" {
+		mt := platform.MapTitle(w.Title)
+		if mt == "" {
 			end()
 			l.set(func(s *LiveState) { s.Phase, s.Map, s.Lazer = "menu", "", w.Lazer })
 			continue
@@ -263,9 +330,10 @@ func (l *liveCtl) run(stop, done chan struct{}) {
 		reset := l.newSet
 		l.newSet = false
 		l.mu.Unlock()
-		retry := ses != nil && ses.Title == title && !ses.Playable() && time.Since(nomapAt) > 5*time.Second
-		if ses == nil || ses.Title != title || reset && smp != nil || retry {
+		retry := ses != nil && ses.Title == mt && !ses.Playable() && time.Since(nomapAt) > 5*time.Second
+		if ses == nil || ses.Title != mt || reset && smp != nil || retry {
 			end()
+			title = mt
 			ses = live.NewSession(title, a.mapsByTitle(title, w.Lazer), w.Lazer)
 			nomapAt = time.Now()
 			playID = title + "@" + nomapAt.Format(time.RFC3339Nano)
@@ -295,6 +363,7 @@ func (l *liveCtl) run(stop, done chan struct{}) {
 		for _, p := range smp.Drain() {
 			x, y := toOsu(p.X, p.Y)
 			ses.Add(live.Press{At: p.At, X: x, Y: y, Area: cur})
+			lastPress = p.At
 		}
 		now := smp.Now()
 		ses.Update(now)
@@ -310,53 +379,57 @@ func (l *liveCtl) run(stop, done chan struct{}) {
 		var newCs []aim.Click
 		var newMoves []aim.Move
 		var newAreas []otd.Rect
+		var newW []float64
 		for _, c := range ses.Clicks(now) {
 			k := [2]float64{c.T, c.PressT}
 			if seen[k] {
 				continue
 			}
 			seen[k] = true
-			newCs, newMoves, newAreas = append(newCs, c.Click), append(newMoves, c.Move), append(newAreas, c.Area)
+			wt, changed := adapt.weight(c.Area)
+			if changed {
+				block = 0 // the area changed (here or by hand): a new stretch
+			}
+			block += wt
+			newCs, newMoves, newAreas, newW = append(newCs, c.Click), append(newMoves, c.Move), append(newAreas, c.Area), append(newW, wt)
+			if wt < 0.5 {
+				continue // still getting used to the area: not for the fit
+			}
 			area := c.Area
-			for _, x := range aim.Samples([]aim.Click{c.Click}, su, func(int) otd.Rect { return area }) {
-				pool = append(pool, x)
-				poolHits = append(poolHits, c.Hit)
-				fresh++
-			}
+			pool = append(pool, aim.Samples([]aim.Click{c.Click}, su, func(int) otd.Rect { return area })...)
 		}
-		a.remember(time.Now(), playID, newCs, newMoves, newAreas)
-		if len(pool) > fitClicks {
-			pool, poolHits = pool[len(pool)-fitClicks:], poolHits[len(poolHits)-fitClicks:]
+		a.remember(time.Now(), playID, newCs, newMoves, newAreas, newW)
+		if len(pool) > poolSize {
+			pool = pool[len(pool)-poolSize:]
 		}
-		if fresh < stepClicks || time.Since(lastStep) < stepGap {
-			continue
-		}
-		misses := 0
-		for _, h := range poolHits[max(0, len(poolHits)-fresh):] {
-			if !h {
-				misses++
-			}
-		}
-		n := min(fresh, len(pool))
-		fresh, lastStep = 0, time.Now()
-		if l.step(pool, n, misses, cur, title) {
-			stepped = true
+		showBlock()
+		// a long map: the change comes in a pause, after a double stretch
+		if block >= 2*need() && now-lastPress >= breakGap {
+			try()
 		}
 	}
 }
 
-// step moves the area a little towards the one that fits the last clicks
-// (n of them new since the last step, misses of those outside the circle).
-func (l *liveCtl) step(samples []aim.Sample, n, misses int, cur otd.Rect, title string) bool {
+// step decides the next area after a stretch: towards the one your clicks
+// fit, with what the memory of the widths knows (or a stretch at a nearby
+// width, to measure it); nothing when nothing asks clearly for a change.
+func (l *liveCtl) step(pool []aim.Sample, cur otd.Rect, plan *calib.Plan, pre *otd.Rect, title string) bool {
 	a := l.a
+	set := a.Settings()
 	lim := a.limitsFor(cur)
-	res, ok := aim.Fit(samples, lim, cur, false)
+	base := cur
+	back := plan.WasProbe && pre.Valid()
+	if back {
+		base = *pre // after a trial width, from where it was
+	}
+	res, ok := aim.Fit(pool, lim, base, true)
 	if !ok {
 		return false
 	}
-	// what the memory of the widths says about the width the clicks ask for
-	mem := a.memReport(cur)
-	dec := mem.Decide(cur.W, res.Area.W)
+	mem := a.memReport(base)
+	p := *plan
+	p.Explore, p.Min, p.Max = set.TryWidths, lim.MinW, lim.MaxW
+	dec := mem.Next(base.W, res.Area.W, res.SE[0], p)
 	w := dec.Width
 	if lim.MinW > 0 {
 		w = math.Max(w, lim.MinW)
@@ -364,17 +437,51 @@ func (l *liveCtl) step(samples []aim.Sample, n, misses int, cur otd.Rect, title 
 	if lim.MaxW > 0 {
 		w = math.Min(w, lim.MaxW)
 	}
-	target := res.Area
-	if math.Abs(w-res.Area.W) > 0.005 {
-		// the best place for that width
+	// where the area goes for that width
+	at := func(width float64) otd.Rect {
 		fixed := lim
-		fixed.MinW, fixed.MaxW = w, w
-		if r2, ok := aim.Fit(samples, fixed, cur, false); ok {
-			target = r2.Area
+		fixed.MinW, fixed.MaxW = width, width
+		if r, ok := aim.Fit(pool, fixed, base, false); ok {
+			return r.Area
 		}
+		r := res.Area
+		r.W, r.H = width, width*lim.Ratio
+		return r
 	}
-	next, changed := sculpt(cur, target, lim, a.Settings().Strength, dec.Factor, dataFactor(mem))
-	if !changed {
+	target := at(w)
+	var next otd.Rect
+	if dec.Probe != 0 {
+		next = target
+		next.W = round2(next.W)
+		next.H = math.Round(next.W*lim.Ratio*1000) / 1000
+		next.X, next.Y = round2(next.X), round2(next.Y)
+		*pre = base
+		plan.WasProbe, plan.LastSide = true, dec.Probe
+	} else {
+		plan.WasProbe = false
+		// the position moves only when your clicks ask for it clearly
+		if math.Abs(target.X-base.X) < math.Max(0.1, res.SE[1]) {
+			target.X = base.X
+		}
+		if math.Abs(target.Y-base.Y) < math.Max(0.1, res.SE[2]) {
+			target.Y = base.Y
+		}
+		if dec.Hold {
+			target.W = base.W
+		}
+		next, _ = sculpt(base, target, lim, set.Strength, dec.Factor, dataFactor(mem))
+	}
+	// where the best area sits on the tablet, for the best area shown
+	if mem.HasBest {
+		b := at(mem.Best)
+		a.mem.SetPos(a.memKey(base), b.X, b.Y)
+	}
+	why := dec.Why
+	if back {
+		why = fmt.Sprintf("back from trying %.1f mm; %s", cur.W, why)
+	}
+	if next.Same(cur) {
+		log.Printf("live: stays at %.2f x %.3f at %.2f, %.2f (%s)", cur.W, cur.H, cur.X, cur.Y, why)
 		return false
 	}
 	a.mu.Lock()
@@ -386,9 +493,8 @@ func (l *liveCtl) step(samples []aim.Sample, n, misses int, cur otd.Rect, title 
 	}
 	a.mu.Lock()
 	a.noteAreaLocked(next, "live")
-	sound := a.set.Sound
 	a.mu.Unlock()
-	if sound {
+	if set.Sound {
 		switch {
 		case next.W > cur.W+0.005:
 			platform.PlayWav(live.SoundGrow)
@@ -398,7 +504,13 @@ func (l *liveCtl) step(samples []aim.Sample, n, misses int, cur otd.Rect, title 
 			platform.PlayWav(live.SoundMove)
 		}
 	}
-	stepLog := LiveStep{At: time.Now(), Map: title, From: cur, To: next, Clicks: n, Misses: misses, Why: dec.Why}
+	misses := 0
+	for _, x := range pool {
+		if math.Hypot(x.Err[0], x.Err[1]) > x.Radius {
+			misses++
+		}
+	}
+	stepLog := LiveStep{At: time.Now(), Map: title, From: cur, To: next, Clicks: len(pool), Misses: misses, Why: why}
 	l.set(func(s *LiveState) {
 		s.Error = ""
 		s.Steps = append(s.Steps, stepLog)
@@ -406,23 +518,23 @@ func (l *liveCtl) step(samples []aim.Sample, n, misses int, cur otd.Rect, title 
 			s.Steps = s.Steps[len(s.Steps)-200:]
 		}
 	})
-	log.Printf("live: %.2f x %.3f at %.2f, %.2f -> %.2f x %.3f at %.2f, %.2f (clicks ask %.2f, towards %.2f: %s)",
-		cur.W, cur.H, cur.X, cur.Y, next.W, next.H, next.X, next.Y, res.Area.W, target.W, dec.Why)
+	log.Printf("live: %.2f x %.3f at %.2f, %.2f -> %.2f x %.3f at %.2f, %.2f (clicks ask %.2f ± %.2f: %s)",
+		cur.W, cur.H, cur.X, cur.Y, next.W, next.H, next.X, next.Y, res.Area.W, res.SE[0], why)
 	return true
 }
 
-// sculpt is the next area: part of the way from cur to fit, by at most a
-// little (wf and pf scale the step of the width and of the position), and
-// only if it changes something.
+// sculpt is the next area after a stretch: part of the way from cur to fit,
+// by at most a little (wf and pf scale the step of the width and of the
+// position), and only if it changes something.
 func sculpt(cur, fit otd.Rect, lim aim.Limits, strength string, wf, pf float64) (otd.Rect, bool) {
-	frac, k := 0.4, 1.0
+	frac, maxW, maxXY := 0.6, 0.015, 0.8
 	switch strength {
 	case "gentle":
-		frac, k = 0.25, 0.6
+		frac, maxW, maxXY = 0.4, 0.008, 0.5
 	case "strong":
-		frac, k = 0.6, 1.6
+		frac, maxW, maxXY = 0.8, 0.025, 1.2
 	}
-	maxW, maxXY := 0.012*cur.W*k, 0.6*k
+	maxW *= cur.W
 	lim1 := func(v, m float64) float64 { return math.Max(-m, math.Min(m, v)) }
 	dw := lim1(frac*wf*(fit.W-cur.W), maxW*wf)
 	dx := lim1(frac*pf*(fit.X-cur.X), maxXY*pf)

@@ -17,19 +17,25 @@ type player struct {
 	spread func(w float64) float64
 }
 
-func (p player) clicks(rng *rand.Rand, w float64, n int) []Click {
+// click is one press at width w, scattered extra times more (getting used
+// to a change).
+func (p player) click(rng *rand.Rand, w, extra float64) Click {
 	const r = 36.0
+	j := 0.5 + rng.Float64()*9.5
+	a := rng.Float64() * 2 * math.Pi
+	mx, my := j*r*math.Cos(a), j*r*math.Sin(a)
+	s := p.spread(w) * (1 + 0.04*j) * r * extra
+	par := p.land(w)*j*r + rng.NormFloat64()*s
+	perp := rng.NormFloat64() * s
+	ex := par*math.Cos(a) - perp*math.Sin(a)
+	ey := par*math.Sin(a) + perp*math.Cos(a)
+	return Click{Width: w, Dist: math.Hypot(ex, ey) / r, ErrX: ex, ErrY: ey, Radius: r, MoveX: mx, MoveY: my, Gap: 100 + rng.Float64()*350, Weight: 1}
+}
+
+func (p player) clicks(rng *rand.Rand, w float64, n int) []Click {
 	out := make([]Click, 0, n)
 	for i := 0; i < n; i++ {
-		j := 0.5 + rng.Float64()*9.5
-		a := rng.Float64() * 2 * math.Pi
-		mx, my := j*r*math.Cos(a), j*r*math.Sin(a)
-		s := p.spread(w) * (1 + 0.04*j) * r
-		par := p.land(w)*j*r + rng.NormFloat64()*s
-		perp := rng.NormFloat64() * s
-		ex := par*math.Cos(a) - perp*math.Sin(a)
-		ey := par*math.Sin(a) + perp*math.Cos(a)
-		out = append(out, Click{Width: w, Dist: math.Hypot(ex, ey) / r, ErrX: ex, ErrY: ey, Radius: r, MoveX: mx, MoveY: my, Gap: 100 + rng.Float64()*350})
+		out = append(out, p.click(rng, w, 1))
 	}
 	return out
 }
@@ -67,7 +73,7 @@ func TestHabitFollowsYou(t *testing.T) {
 		t.Fatalf("habit %v %.3f cross %v", r.Habit, r.HabitK, r.HasCross)
 	}
 	// the clicks ask for a smaller area: not past the band
-	d := r.Decide(90, 84)
+	d := r.Next(90, 84, 0.3, Plan{})
 	if d.Width < r.BandLo-1e-9 {
 		t.Fatalf("chased the habit: %+v (band %.0f-%.0f)", d, r.BandLo, r.BandHi)
 	}
@@ -87,7 +93,7 @@ func TestBandWallWhereYouMissMore(t *testing.T) {
 	if !r.HasBand || r.BandLo < 85 || r.BandLo > 87 || !r.LoWall {
 		t.Fatalf("band %v %.0f-%.0f wall %v; widths %+v", r.HasBand, r.BandLo, r.BandHi, r.LoWall, r.Widths)
 	}
-	d := r.Decide(88, 83)
+	d := r.Next(88, 83, 0.3, Plan{})
 	if d.Width < r.BandLo-1e-9 {
 		t.Fatalf("went past the wall: %+v", d)
 	}
@@ -106,12 +112,12 @@ func TestBandEdgeIsElastic(t *testing.T) {
 	if !r.HasBand || r.BandLo != 88 || r.BandHi != 94 || r.LoWall {
 		t.Fatalf("band %.0f-%.0f wall %v", r.BandLo, r.BandHi, r.LoWall)
 	}
-	d := r.Decide(88.2, 80)
-	if d.Width > 87.9 || d.Width < 86.5 || d.Factor > 0.5 {
-		t.Fatalf("past the edge: %+v", d)
+	d := r.Next(88.2, 80, 0.3, Plan{})
+	if d.Width < r.BandLo-math.Max(1, 0.015*88.2)-1e-9 {
+		t.Fatalf("too far past the edge: %+v", d)
 	}
-	in := r.Decide(90, 91)
-	if in.Width != 91 || in.Factor < 0.6 {
+	in := r.Next(90, 91, 0.3, Plan{})
+	if in.Width < 91 || in.Factor < 0.6 || in.Hold {
 		t.Fatalf("inside: %+v", in)
 	}
 }
@@ -139,31 +145,74 @@ func TestMemoryKeepsAndFades(t *testing.T) {
 	}
 }
 
-// sculpt plays rounds of 40 clicks at the width the decisions lead to.
-func sculpt(t *testing.T, p player, start float64, rounds int, seed int64) (last, lowest float64) {
+// run is what a simulated calibration did.
+type run struct {
+	last, lowest, highest float64 // width at the end (average of the last blocks), lowest, highest
+	changes, clicks       int
+	rep                   Report
+}
+
+// sculpt plays the live calibration the way the program does: stretches of
+// about 150 clicks (counting less the first ones after a change, which this
+// player also scatters more), then a decision.
+func sculpt(t *testing.T, p player, start float64, blocks int, seed int64, explore bool) run {
 	t.Helper()
 	s := newStore(t)
 	rng := rand.New(rand.NewSource(seed))
-	w, lowest := start, start
+	w, pre := start, start
+	since, need := 0, 0.0
+	lastChange := 0.0
+	plan := Plan{Explore: explore}
+	out := run{lowest: start, highest: start}
 	var sum float64
 	n := 0
-	for i := 0; i < rounds; i++ {
-		day := day0.Add(time.Duration(i/100) * 24 * time.Hour)
-		cs := p.clicks(rng, w, 40)
-		s.Add("k", day, fmt.Sprint(i/3), cs)
-		// what the last clicks ask for: as much smaller as they land short
-		fit := w * (1 + p.land(w) + rng.NormFloat64()*0.01)
-		d := s.Analyze("k", day).Decide(w, fit)
-		step := 0.4 * d.Factor * (d.Width - w)
-		lim := 0.012 * w * d.Factor
-		w += math.Max(-lim, math.Min(lim, step))
-		lowest = math.Min(lowest, w)
-		if i >= rounds-100 {
-			sum += w
+	for b := 0; b < blocks; b++ {
+		day := day0.Add(time.Duration(b/40) * 24 * time.Hour)
+		var cs []Click
+		adapted := 0.0
+		for adapted < 150 {
+			// getting used to a change: more scatter at first
+			extra := 1 + 0.6*math.Min(1, lastChange)*math.Exp(-float64(since)/20)
+			c := p.click(rng, w, extra)
+			c.Weight = AdaptWeight(since, need)
+			since++
+			adapted += c.Weight
+			cs = append(cs, c)
+		}
+		out.clicks += len(cs)
+		s.Add("k", day, fmt.Sprint(b), cs)
+		r := s.Analyze("k", day)
+		base := w
+		if plan.WasProbe {
+			base = pre
+		}
+		fit := base*(1+p.land(base)) + rng.NormFloat64()*0.3
+		d := r.Next(base, fit, 0.3, plan)
+		next := base
+		if d.Probe != 0 {
+			pre, next = base, d.Width
+			plan.WasProbe, plan.LastSide = true, d.Probe
+		} else {
+			plan.WasProbe = false
+			if !d.Hold {
+				lim := 0.015 * base * d.Factor
+				next = base + math.Max(-lim, math.Min(lim, 0.6*d.Factor*(d.Width-base)))
+			}
+		}
+		if ch := math.Abs(next - w); ch >= 0.05 {
+			since, need, lastChange = 0, AdaptNeed(ch), ch
+			out.changes++
+			w = next
+		}
+		out.lowest, out.highest = math.Min(out.lowest, w), math.Max(out.highest, w)
+		if b >= blocks-20 {
+			sum += base
 			n++
 		}
+		out.rep = r
 	}
-	return sum / float64(n), lowest
+	out.last = sum / float64(n)
+	return out
 }
 
 // Your case: the hand pulls towards 84 mm, but below about 87 you scatter
@@ -173,10 +222,19 @@ func TestSculptStopsWhereMissesGrow(t *testing.T) {
 		land:   func(w float64) float64 { return 0.5 * (84 - w) / w },
 		spread: func(w float64) float64 { return 0.3 * (1 + 0.2*math.Max(0, 87-w)) },
 	}
-	last, lowest := sculpt(t, p, 92, 300, 6)
-	t.Logf("settled around %.2f, lowest %.2f", last, lowest)
-	if last < 86 || last > 89.5 || lowest < 83.5 {
-		t.Fatalf("settled around %.2f, lowest %.2f", last, lowest)
+	for seed := int64(1); seed <= 4; seed++ {
+		r := sculpt(t, p, 92, 120, seed, true)
+		t.Logf("settled around %.2f, lowest %.2f, %d changes in %d clicks, reliability %.2f, band %.0f-%.0f best %.1f",
+			r.last, r.lowest, r.changes, r.clicks, r.rep.Reliability, r.rep.BandLo, r.rep.BandHi, r.rep.Best)
+		if r.last < 86 || r.last > 90 || r.lowest < 83.5 {
+			t.Fatalf("seed %d: settled around %.2f, lowest %.2f", seed, r.last, r.lowest)
+		}
+		if r.clicks/max(1, r.changes) < 150 {
+			t.Fatalf("seed %d: a change every %d clicks", seed, r.clicks/max(1, r.changes))
+		}
+		if r.rep.Reliability < Reliable || r.rep.Best < 86 {
+			t.Fatalf("seed %d: best %.1f reliability %.2f", seed, r.rep.Best, r.rep.Reliability)
+		}
 	}
 }
 
@@ -187,10 +245,10 @@ func TestSculptGoesWhereTheHandIs(t *testing.T) {
 		land:   func(w float64) float64 { return 0.5 * (84 - w) / w },
 		spread: func(float64) float64 { return 0.3 },
 	}
-	last, _ := sculpt(t, p, 92, 300, 7)
-	t.Logf("settled around %.2f", last)
-	if last > 86 {
-		t.Fatalf("held back for nothing: %.2f", last)
+	r := sculpt(t, p, 92, 120, 7, true)
+	t.Logf("settled around %.2f", r.last)
+	if r.last > 86 {
+		t.Fatalf("held back for nothing: %.2f", r.last)
 	}
 }
 
@@ -200,10 +258,10 @@ func TestSculptGrowsToo(t *testing.T) {
 		land:   func(w float64) float64 { return 0.5 * (100 - w) / w },
 		spread: func(w float64) float64 { return 0.3 },
 	}
-	last, _ := sculpt(t, p, 92, 300, 8)
-	t.Logf("settled around %.2f", last)
-	if last < 98 {
-		t.Fatalf("didn't grow: %.2f", last)
+	r := sculpt(t, p, 92, 120, 8, true)
+	t.Logf("settled around %.2f", r.last)
+	if r.last < 98 {
+		t.Fatalf("didn't grow: %.2f", r.last)
 	}
 }
 
@@ -220,18 +278,47 @@ func TestDemoMemory(t *testing.T) {
 		spread: func(w float64) float64 { return 0.3 * (1 + 0.2*math.Max(0, 87-w)) },
 	}
 	s := Open(path)
+	key := Key("Wacom CTL-472", 0.5625)
 	rng := rand.New(rand.NewSource(66))
-	w := 92.0
+	w, pre := 92.0, 92.0
+	since, need := 0, 0.0
+	plan := Plan{Explore: true}
 	now := time.Now()
-	for i := 0; i < 160; i++ {
-		day := now.Add(-time.Duration(1-i/80) * 24 * time.Hour)
-		s.Add(Key("Wacom CTL-472", 0.5625), day, fmt.Sprint(i/3), p.clicks(rng, w, 40))
-		fit := w * (1 + p.land(w) + rng.NormFloat64()*0.01)
-		d := s.Analyze(Key("Wacom CTL-472", 0.5625), day).Decide(w, fit)
-		step := 0.4 * d.Factor * (d.Width - w)
-		lim := 0.012 * w * d.Factor
-		w += math.Max(-lim, math.Min(lim, step))
+	for b := 0; b < 70; b++ {
+		day := now.Add(-time.Duration(1-b/35) * 24 * time.Hour)
+		var cs []Click
+		adapted := 0.0
+		for adapted < 150 {
+			c := p.click(rng, w, 1)
+			c.Weight = AdaptWeight(since, need)
+			since++
+			adapted += c.Weight
+			cs = append(cs, c)
+		}
+		s.Add(key, day, fmt.Sprint(b), cs)
+		r := s.Analyze(key, day)
+		base := w
+		if plan.WasProbe {
+			base = pre
+		}
+		d := r.Next(base, base*(1+p.land(base))+rng.NormFloat64()*0.3, 0.3, plan)
+		next := base
+		if d.Probe != 0 {
+			pre, next = base, d.Width
+			plan.WasProbe, plan.LastSide = true, d.Probe
+		} else {
+			plan.WasProbe = false
+			if !d.Hold {
+				lim := 0.015 * base * d.Factor
+				next = base + math.Max(-lim, math.Min(lim, 0.6*d.Factor*(d.Width-base)))
+			}
+		}
+		if ch := math.Abs(next - w); ch >= 0.05 {
+			since, need = 0, AdaptNeed(ch)
+			w = next
+		}
 	}
+	s.SetPos(key, 76.6, 47.3)
 	if err := s.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -252,5 +339,112 @@ func TestOneMapIsNotABand(t *testing.T) {
 	r := s.Analyze("k", day0)
 	if !r.HasBand || r.BandLo < 86 || r.Best < 86 {
 		t.Fatalf("band %.0f-%.0f best %.1f", r.BandLo, r.BandHi, r.Best)
+	}
+}
+
+// A player who always lands 4% short: it stops chasing that.
+func TestSculptDoesNotChaseAHabit(t *testing.T) {
+	p := player{land: func(float64) float64 { return -0.04 }, spread: func(float64) float64 { return 0.3 }}
+	r := sculpt(t, p, 92, 120, 9, true)
+	t.Logf("settled around %.2f, lowest %.2f, habit %v", r.last, r.lowest, r.rep.Habit)
+	if r.last < 85 || r.lowest < 83 {
+		t.Fatalf("chased the habit: settled %.2f lowest %.2f", r.last, r.lowest)
+	}
+}
+
+// Getting used to a change costs misses at every width: with the first
+// clicks after a change counting less, no width looks worse for it.
+func TestGettingUsedIsNotAWorseWidth(t *testing.T) {
+	p := player{land: func(w float64) float64 { return 0.5 * (89 - w) / w }, spread: func(float64) float64 { return 0.3 }}
+	r := sculpt(t, p, 92, 120, 10, true)
+	worse := 0
+	for _, w := range r.rep.Widths {
+		if w.Worse {
+			worse++
+		}
+	}
+	t.Logf("band %.0f-%.0f, worse %d, reliability %.2f, settled %.2f", r.rep.BandLo, r.rep.BandHi, worse, r.rep.Reliability, r.last)
+	if worse > 0 || math.Abs(r.last-89) > 1.5 {
+		t.Fatalf("band %.0f-%.0f, worse %d, settled %.2f", r.rep.BandLo, r.rep.BandHi, worse, r.last)
+	}
+}
+
+func TestWeightsCountLess(t *testing.T) {
+	s := newStore(t)
+	rng := rand.New(rand.NewSource(11))
+	p := player{land: func(float64) float64 { return 0 }, spread: func(float64) float64 { return 0.3 }}
+	cs := p.clicks(rng, 90.5, 200)
+	for i := range cs {
+		switch {
+		case i < 50:
+			cs[i].Weight = 0
+		case i < 100:
+			cs[i].Weight = 0.5
+		}
+	}
+	s.Add("k", day0, "a", cs)
+	if r := s.Analyze("k", day0); math.Abs(r.Clicks-125) > 1e-9 {
+		t.Fatalf("clicks %.1f, want 125", r.Clicks)
+	}
+	if AdaptWeight(0, 40) != 0 || AdaptWeight(30, 40) != 0.5 || AdaptWeight(40, 40) != 1 || AdaptWeight(3, 0) != 1 {
+		t.Fatal("adapt weights")
+	}
+	if AdaptNeed(0.01) != 0 || AdaptNeed(0.2) != 15 || AdaptNeed(1) != 30 || AdaptNeed(9) != 90 {
+		t.Fatal("adapt need")
+	}
+}
+
+func TestReliabilityGrows(t *testing.T) {
+	s := newStore(t)
+	rng := rand.New(rand.NewSource(12))
+	p := player{land: func(float64) float64 { return 0 }, spread: func(w float64) float64 { return 0.3 * (1 + 0.04*math.Abs(w-90)) }}
+	add := func(w float64, plays int) {
+		for k := 0; k < plays; k++ {
+			s.Add("k", day0, fmt.Sprint(w, k, rng.Int()), p.clicks(rng, w, 100))
+		}
+	}
+	add(90.5, 4)
+	r1 := s.Analyze("k", day0)
+	add(88.5, 4)
+	add(92.5, 4)
+	r2 := s.Analyze("k", day0)
+	for i := 0; i < 5; i++ {
+		add(88.5, 3)
+		add(90.5, 3)
+		add(92.5, 3)
+	}
+	r3 := s.Analyze("k", day0)
+	t.Logf("reliability %.2f -> %.2f -> %.2f, best %.1f", r1.Reliability, r2.Reliability, r3.Reliability, r3.Best)
+	if !(r1.Reliability < 0.45 && r2.Reliability > r1.Reliability && r3.Reliability > r2.Reliability && r3.Reliability >= Reliable) {
+		t.Fatalf("reliability %.2f %.2f %.2f", r1.Reliability, r2.Reliability, r3.Reliability)
+	}
+	if math.Abs(r3.Best-90.5) > 1.01 {
+		t.Fatalf("best %.1f", r3.Best)
+	}
+}
+
+func TestProbeAndHold(t *testing.T) {
+	s := newStore(t)
+	rng := rand.New(rand.NewSource(13))
+	p := player{land: func(float64) float64 { return 0 }, spread: func(float64) float64 { return 0.3 }}
+	for k := 0; k < 4; k++ {
+		s.Add("k", day0, fmt.Sprint(k), p.clicks(rng, 90.5, 100))
+	}
+	r := s.Analyze("k", day0)
+	d := r.Next(90.5, 91.5, 0.3, Plan{Explore: true})
+	if d.Probe != 1 || math.Abs(d.Width-(r.Best+2.26)) > 0.05 {
+		t.Fatalf("should try a wider width first (the clicks point there): %+v best %.1f", d, r.Best)
+	}
+	if d := r.Next(90.5, 91.5, 0.3, Plan{Explore: true, WasProbe: true, LastSide: 1}); d.Probe != 0 {
+		t.Fatalf("two probes in a row: %+v", d)
+	}
+	if d := r.Next(90.5, 91.5, 0.3, Plan{Explore: true, Max: 91}); d.Probe != -1 {
+		t.Fatalf("should try the other side within the range: %+v", d)
+	}
+	if d := r.Next(90.5, 91.5, 0.3, Plan{}); d.Probe != 0 || d.Hold {
+		t.Fatalf("without exploring it follows the clicks: %+v", d)
+	}
+	if d := r.Next(90.5, 90.6, 0.3, Plan{}); !d.Hold || d.Width != 90.5 {
+		t.Fatalf("a change within the noise should hold: %+v", d)
 	}
 }

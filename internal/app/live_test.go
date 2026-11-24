@@ -175,12 +175,12 @@ func (p *player) FineTimer(bool) {}
 func TestLiveSculptsTowardsTheHand(t *testing.T) {
 	w := newWorldSpaced(t, 150)
 	f := startFakeOTD(t, otdJSON)
-	if err := saveSettings(w.data, Settings{OsuDir: w.osuDir, OTDPath: w.otdPath, Ratio: 0.5625, Strength: "strong"}); err != nil {
+	if err := saveSettings(w.data, Settings{OsuDir: w.osuDir, OTDPath: w.otdPath, Ratio: 0.5625, Strength: "strong", TryWidths: false}); err != nil {
 		t.Fatal(err)
 	}
-	old := stepGap
-	stepGap = time.Second
-	defer func() { stepGap = old }()
+	oldBlock, oldGap := blockOverride, breakGap
+	blockOverride, breakGap = 20, 0
+	defer func() { blockOverride, breakGap = oldBlock, oldGap }()
 	a := New(w.data, "test")
 	hand := otd.Rect{W: 80, H: 45, X: 77, Y: 47}
 	pl := newPlayer(w, f, hand, time.Now().Add(500*time.Millisecond))
@@ -192,7 +192,7 @@ func TestLiveSculptsTowardsTheHand(t *testing.T) {
 	defer a.Close()
 	waitFor(t, "the area", func() bool { return a.State().Area != nil })
 	a.SetLive(true)
-	waitLong(t, "a few changes", 30*time.Second, func() bool { return len(a.State().Live.Steps) >= 3 })
+	waitLong(t, "a few changes", 60*time.Second, func() bool { return len(a.State().Live.Steps) >= 3 })
 	st := a.State().Live
 	if st.Phase != "playing" || !st.Session.Synced || st.Session.Rate != 1 || st.Session.HR {
 		t.Fatalf("live state %+v", st)
@@ -202,7 +202,7 @@ func TestLiveSculptsTowardsTheHand(t *testing.T) {
 	if !(first.To.W > first.From.W && last.To.W > first.To.W && last.To.X > 76) {
 		t.Fatalf("not going towards the hand: %+v", st.Steps)
 	}
-	if d := first.To.W - first.From.W; d > 0.02*first.From.W+0.01 {
+	if d := first.To.W - first.From.W; d > 0.025*first.From.W+0.01 {
 		t.Fatalf("a change too big: %.2f", d)
 	}
 	if got := f.area(); !got.Same(last.To) {

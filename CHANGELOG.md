@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.2.0
+
+- **Stretches instead of constant changes.** Live now changes the area after a stretch
+  of about 150 clicks (200 gentle, 100 strong), at the end of a map (in a long map, in a
+  pause), instead of every 30 clicks: there is time to get used to each area.
+- **Getting used to a change isn't held against a width.** The first clicks after every
+  change count less (15 to 90 clicks, by how big the change was), in the memory of the
+  widths and in the fit.
+- **Calm when you're fine.** When your clicks don't ask clearly for another width or
+  position, the area stays.
+- **Trying nearby widths** (can be turned off): while it isn't sure of the best width, now
+  and then it plays one stretch about 2 mm narrower or wider, or at a width that might be
+  better, then comes back. Data only where you already play would leave little to
+  compare.
+- **Best area so far**, with a **reliability** bar that grows as you play and a button to
+  use it (and stop Live). From 75% you can stop calibrating. As it gets sure, Live goes
+  towards the width where you miss the least.
+- A habit, once seen, stays until the clicks clearly say otherwise; what the clicks ask
+  for in its direction is no longer followed.
+
 ## 3.1.0
 
 - **Live finds your range by itself.** It remembers how you play at each width, day
